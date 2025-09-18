@@ -1,0 +1,48 @@
+# Node modules
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.env
+venv/
+
+# Frontend build artifacts
+build/
+
+# Misc
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Playwright
+.playwright-mcp/
+
+# IDE configuration
+.vscode/
+.idea/
+
+# Log files
+*.log
+
+# OS-generated files
+Thumbs.db
+
+# Coverage data
+.coverage
+
+# misc
+misc/
+robots.txt
+.firebaserc
+.firebase/
+tests/
+
+# Gemini files
+GEMINI.md
+tasks.md
+problem_statement.txt

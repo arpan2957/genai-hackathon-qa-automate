@@ -1,0 +1,30 @@
+steps:
+- name: 'python:3.11-slim'
+  entrypoint: 'pip'
+  args: ['install', '-r', 'requirements.txt']
+- name: 'python:3.11-slim'
+  entrypoint: 'python'
+  args: ['-m', 'pytest', 'tests']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'asia-south1-docker.pkg.dev/$PROJECT_ID/ai-test-case-generator/backend:$COMMIT_SHA', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'asia-south1-docker.pkg.dev/$PROJECT_ID/ai-test-case-generator/backend:$COMMIT_SHA']
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args:
+  - 'run'
+  - 'deploy'
+  - 'ai-test-case-generator-backend'
+  - '--image'
+  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ai-test-case-generator/backend:$COMMIT_SHA'
+  - '--region'
+  - 'asia-south1'
+  - '--platform'
+  - 'managed'
+  
+  - '--set-env-vars'
+  - 'GOOGLE_API_KEY=$GOOGLE_API_KEY'
+images:
+- 'asia-south1-docker.pkg.dev/$PROJECT_ID/ai-test-case-generator/backend:$COMMIT_SHA'
+options:
+  logging: CLOUD_LOGGING_ONLY

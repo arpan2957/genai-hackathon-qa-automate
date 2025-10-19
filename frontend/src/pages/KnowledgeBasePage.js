@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 const KnowledgeBasePage = () => {
     const [documents, setDocuments] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [selectedDocuments, setSelectedDocuments] = useState(new Set());
 
     useEffect(() => {
         // Fetch documents from the backend
@@ -69,28 +70,75 @@ const KnowledgeBasePage = () => {
         }
     };
 
+    const handleDeleteSelected = async () => {
+        const promises = Array.from(selectedDocuments).map(id => handleDelete(id));
+        await Promise.all(promises);
+        setSelectedDocuments(new Set());
+    };
+
+    const handleSelectDocument = (id) => {
+        const newSelectedDocuments = new Set(selectedDocuments);
+        if (newSelectedDocuments.has(id)) {
+            newSelectedDocuments.delete(id);
+        } else {
+            newSelectedDocuments.add(id);
+        }
+        setSelectedDocuments(newSelectedDocuments);
+    };
+
+    const handleSelectAll = (event) => {
+        if (event.target.checked) {
+            const newSelectedDocuments = new Set(documents.map(doc => doc.id));
+            setSelectedDocuments(newSelectedDocuments);
+        } else {
+            setSelectedDocuments(new Set());
+        }
+    };
+
     return (
         <div className="p-6 bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-            <h1 className="text-2xl font-bold mb-4">Knowledge Base</h1>
-
-            <div className="mb-4">
-                <label className="bg-cyan-600 text-white px-4 py-2 rounded-lg hover:bg-cyan-700 cursor-pointer">
-                    Browse Files
-                    <input type="file" onChange={handleFileUpload} className="hidden" />
-                </label>
+            <div className="flex justify-between items-center mb-4">
+                <h1 className="text-2xl font-bold">Knowledge Base</h1>
+                <div className="flex items-center space-x-2">
+                    {selectedDocuments.size > 0 && (
+                        <button onClick={handleDeleteSelected} className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-700">Delete Selected</button>
+                    )}
+                    <label className="bg-cyan-600 text-white px-4 py-2 rounded-lg hover:bg-cyan-700 cursor-pointer">
+                        Browse Files
+                        <input type="file" onChange={handleFileUpload} className="hidden" />
+                    </label>
+                </div>
             </div>
 
             {isLoading ? (
                 <p>Loading documents...</p>
             ) : (
-                <ul className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm">
-                    {documents.map(doc => (
-                        <li key={doc.id} className="flex justify-between items-center p-4 border-b dark:border-gray-700">
-                            <span>{doc.filename}</span>
-                            <button onClick={() => handleDelete(doc.id)} className="text-red-500 hover:text-red-700">Delete</button>
-                        </li>
-                    ))}
-                </ul>
+                <table className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm">
+                    <thead>
+                        <tr className="border-b dark:border-gray-700">
+                            <th className="p-4 text-left w-10">
+                                <input type="checkbox" onChange={handleSelectAll} checked={selectedDocuments.size === documents.length && documents.length > 0} />
+                            </th>
+                            <th className="p-4 text-left">Filename</th>
+                            <th className="p-4 text-left">Upload Date</th>
+                            <th className="p-4 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {documents.map(doc => (
+                            <tr key={doc.id} className="border-b dark:border-gray-700">
+                                <td className="p-4">
+                                    <input type="checkbox" onChange={() => handleSelectDocument(doc.id)} checked={selectedDocuments.has(doc.id)} />
+                                </td>
+                                <td className="p-4">{doc.filename}</td>
+                                <td className="p-4">{new Date(doc.upload_date).toLocaleDateString()}</td>
+                                <td className="p-4 text-right">
+                                    <button onClick={() => handleDelete(doc.id)} className="text-red-500 hover:text-red-700">Delete</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             )}
         </div>
     );

@@ -21,6 +21,9 @@ from atlassian import Jira
 
 from agents.test_case_agent import TestCaseAgent
 
+from google.cloud import aiplatform
+from google.cloud import bigquery
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -31,6 +34,42 @@ if not api_key:
 
 GENAI_MODEL = os.getenv("GENAI_MODEL", "gemini-2.5-flash")
 genai.configure(api_key=api_key)
+
+# --- Vertex AI Configuration ---
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+LOCATION = "us-central1"
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+
+# --- BigQuery Configuration ---
+BIGQUERY_DATASET = "knowledge_base"
+BIGQUERY_TABLE = "documents"
+bq_client = bigquery.Client(project=PROJECT_ID)
+
+def create_bigquery_dataset_and_table():
+    dataset_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}"
+    try:
+        bq_client.get_dataset(dataset_id)
+    except Exception:
+        dataset = bigquery.Dataset(dataset_id)
+        bq_client.create_dataset(dataset, timeout=30)
+
+    table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}"
+    try:
+        bq_client.get_table(table_id)
+    except Exception:
+        schema = [
+            bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("filename", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("upload_date", "TIMESTAMP", mode="REQUIRED"),
+            bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("embedding", "FLOAT", mode="REPEATED"),
+        ]
+        table = bigquery.Table(table_id, schema=schema)
+        bq_client.create_table(table)
+
+@app.on_event("startup")
+async def startup_event():
+    create_bigquery_dataset_and_table()
 
 # --- Jira Configuration ---
 JIRA_URL = os.getenv("JIRA_URL")
@@ -152,6 +191,34 @@ async def generate_test_cases(request: RequirementRequest, user: Dict[str, Any] 
     try:
         product_name = request.product_name or "General Product"
         requirements = []
+        context = ""
+
+        if request.requirement:
+            # Generate embedding for the requirement
+            model = aiplatform.TextEmbeddingModel.from_pretrained("textembedding-gecko@001")
+            requirement_embedding = model.get_embeddings([request.requirement])[0].values
+
+            # Query BigQuery to find similar documents
+            table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}"
+            query = f"""
+                SELECT id, filename, upload_date, user_id, embedding
+                FROM `{table_id}`
+                WHERE user_id = '{user["uid"]}'
+                ORDER BY
+                (SELECT SUM(v1 * v2)
+                FROM UNNEST(embedding) AS v1 WITH OFFSET i
+                JOIN UNNEST({requirement_embedding}) AS v2 WITH OFFSET j
+                ON i = j) DESC
+                LIMIT 3
+            """
+            query_job = bq_client.query(query)
+            rows = query_job.result()
+
+            # Get the text of the most similar documents from Firestore
+            for row in rows:
+                doc_ref = db.collection('users').document(user['uid']).collection('knowledge_base').document(row.id).get()
+                if doc_ref.exists:
+                    context += doc_ref.to_dict().get("text", "")
 
         if request.document_text:
             segmented_text = agent.segment_requirements(document_text=request.document_text)
@@ -171,7 +238,9 @@ async def generate_test_cases(request: RequirementRequest, user: Dict[str, Any] 
         for domain, reqs in classified_data.get("domains", {}).items():
             domain_test_cases = []
             for req in reqs:
-                tc_text = agent.generate_initial_test_cases(requirement=req)
+                # Inject context into the prompt
+                requirement_with_context = f"{req}\n\nContext:\n{context}"
+                tc_text = agent.generate_initial_test_cases(requirement=requirement_with_context)
                 tc_data = json.loads(_clean_json_response(tc_text))
                 for tc in tc_data:
                     tc['traceability_id'] = f"{request.requirement_id}-{tc['test_case_id']}" if request.requirement_id else tc['test_case_id']
@@ -186,7 +255,9 @@ async def generate_test_cases(request: RequirementRequest, user: Dict[str, Any] 
         if unclassified_reqs:
             unclassified_test_cases = []
             for req in unclassified_reqs:
-                tc_text = agent.generate_initial_test_cases(requirement=req)
+                # Inject context into the prompt
+                requirement_with_context = f"{req}\n\nContext:\n{context}"
+                tc_text = agent.generate_initial_test_cases(requirement=requirement_with_context)
                 tc_data = json.loads(_clean_json_response(tc_text))
                 unclassified_test_cases.extend([TestCase.model_validate(tc) for tc in tc_data])
             if unclassified_test_cases:
@@ -370,17 +441,65 @@ async def delete_test_case(doc_id: str, case_id: str, user: Dict[str, Any] = Dep
 @app.post("/api/knowledge-base/documents", response_model=PostResponse, status_code=status.HTTP_201_CREATED, tags=["Knowledge Base"], summary="Upload a New Knowledge Base Document",
     description="Uploads a new document to the user's knowledge base.")
 async def create_knowledge_base_document(file: UploadFile = File(...), user: Dict[str, Any] = Depends(get_current_user)):
-    # This is a placeholder for the actual implementation which will include
-    # text extraction, embedding generation, and storage in a vector database.
     try:
         content = await file.read()
-        # For now, just save the file name and upload date to Firestore
+        text = ""
+        filename = file.filename.lower()
+
+        if filename.endswith('.pdf'):
+            try:
+                reader = PdfReader(io.BytesIO(content))
+                text = " ".join(page.extract_text() for page in reader.pages if page.extract_text())
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Error parsing PDF file: {e}")
+        
+        elif filename.endswith('.docx'):
+            try:
+                doc = Document(io.BytesIO(content))
+                text = "\n".join(para.text for para in doc.paragraphs if para.text)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Error parsing DOCX file: {e}")
+
+        elif filename.endswith('.txt'):
+            try:
+                text = content.decode('utf-8')
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Error decoding TXT file: {e}")
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file extension. Please upload .pdf, .docx, or .txt")
+        
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract any text from the document. The file might be empty or scanned.")
+
+        # Generate embeddings
+        model = aiplatform.TextEmbeddingModel.from_pretrained("textembedding-gecko@001")
+        embeddings = model.get_embeddings([text])
+        embedding_values = [v.values for v in embeddings][0]
+
+        # Save to Firestore
         doc_data = {
             "filename": file.filename,
             "upload_date": datetime.now(),
             "user_id": user['uid']
         }
         _, doc_ref = db.collection('users').document(user['uid']).collection('knowledge_base').add(doc_data)
+
+        # Save to BigQuery
+        rows_to_insert = [
+            {
+                "id": doc_ref.id,
+                "filename": file.filename,
+                "upload_date": doc_data["upload_date"].isoformat(),
+                "user_id": user['uid'],
+                "embedding": embedding_values
+            }
+        ]
+        table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}"
+        errors = bq_client.insert_rows_json(table_id, rows_to_insert)
+        if errors:
+            raise HTTPException(status_code=500, detail=f"Error inserting rows into BigQuery: {errors}")
+
         return PostResponse(id=doc_ref.id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -403,7 +522,14 @@ async def get_knowledge_base_documents(user: Dict[str, Any] = Depends(get_curren
     description="Deletes a document from the user's knowledge base.")
 async def delete_knowledge_base_document(document_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     try:
+        # Delete from Firestore
         db.collection('users').document(user['uid']).collection('knowledge_base').document(document_id).delete()
+
+        # Delete from BigQuery
+        table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}"
+        query = f"DELETE FROM `{table_id}` WHERE id = '{document_id}'"
+        bq_client.query(query)
+
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

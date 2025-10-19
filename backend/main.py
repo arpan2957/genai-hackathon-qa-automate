@@ -120,6 +120,11 @@ class GenerateResponse(BaseModel):
 class FinalizedCasesDoc(GenerateResponse):
     id: str
 
+class KnowledgeBaseDocument(BaseModel):
+    id: str
+    filename: str
+    upload_date: datetime
+
 class PostResponse(BaseModel):
     id: str
 
@@ -359,6 +364,50 @@ async def delete_test_case(doc_id: str, case_id: str, user: Dict[str, Any] = Dep
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- Knowledge Base CRUD ---
+
+@app.post("/api/knowledge-base/documents", response_model=PostResponse, status_code=status.HTTP_201_CREATED, tags=["Knowledge Base"], summary="Upload a New Knowledge Base Document",
+    description="Uploads a new document to the user's knowledge base.")
+async def create_knowledge_base_document(file: UploadFile = File(...), user: Dict[str, Any] = Depends(get_current_user)):
+    # This is a placeholder for the actual implementation which will include
+    # text extraction, embedding generation, and storage in a vector database.
+    try:
+        content = await file.read()
+        # For now, just save the file name and upload date to Firestore
+        doc_data = {
+            "filename": file.filename,
+            "upload_date": datetime.now(),
+            "user_id": user['uid']
+        }
+        _, doc_ref = db.collection('users').document(user['uid']).collection('knowledge_base').add(doc_data)
+        return PostResponse(id=doc_ref.id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/knowledge-base/documents", response_model=List[KnowledgeBaseDocument], tags=["Knowledge Base"], summary="Get All Knowledge Base Documents",
+    description="Retrieves a list of all documents in the user's knowledge base.")
+async def get_knowledge_base_documents(user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        docs_ref = db.collection('users').document(user['uid']).collection('knowledge_base').stream()
+        documents = []
+        for doc in docs_ref:
+            doc_data = doc.to_dict()
+            doc_data['id'] = doc.id
+            documents.append(KnowledgeBaseDocument.model_validate(doc_data))
+        return documents
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/knowledge-base/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Knowledge Base"], summary="Delete a Knowledge Base Document",
+    description="Deletes a document from the user's knowledge base.")
+async def delete_knowledge_base_document(document_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        db.collection('users').document(user['uid']).collection('knowledge_base').document(document_id).delete()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # ... other endpoints like /api/upload, /api/history etc.
 

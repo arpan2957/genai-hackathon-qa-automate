@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
-import { LogoIcon, TestCaseIcon, SettingsIcon, SunIcon, MoonIcon, FolderIcon, DesktopIcon } from './icons';
+import { LogoIcon, TestCaseIcon, SettingsIcon, SunIcon, MoonIcon, FolderIcon, DesktopIcon, DatabaseIcon } from './icons';
 
-const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, selectedProduct, setSelectedProduct, isLoadingCases }) => {
+const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, selectedProduct, setSelectedProduct, isLoadingCases, currentPage, setCurrentPage }) => {
     const { theme, toggleTheme } = useTheme();
     const [isHovering, setHovering] = useState(false);
     const isExpanded = isPinned || isHovering;
@@ -114,7 +114,7 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
                     </span>
             </div>
             <ul className="flex-1 pl-3 pr-1 py-4 space-y-2">
-                <NavLink icon={<TestCaseIcon />} onClick={() => setSelectedProduct(null)} isActive={selectedProduct === null}>All Test Cases</NavLink>
+                <NavLink icon={<TestCaseIcon />} onClick={() => {setSelectedProduct(null); setCurrentPage('testcases');}} isActive={selectedProduct === null && currentPage === 'testcases'}>All Test Cases</NavLink>
 
                 <ProductsNavLink
                     icon={<FolderIcon />}
@@ -125,6 +125,8 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
                 >
                     Products
                 </ProductsNavLink>
+
+                <NavLink icon={<DatabaseIcon />} onClick={() => setCurrentPage('knowledgebase')} isActive={currentPage === 'knowledgebase'}>Knowledge Base</NavLink>
 
                 <NavLink icon={<SettingsIcon />}>Settings</NavLink>
             </ul>

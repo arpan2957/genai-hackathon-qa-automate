@@ -13,6 +13,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { ChevronDownIcon, EmptyStateIcon, SearchIcon } from '../components/icons';
 import toast from 'react-hot-toast';
 
+import KnowledgeBasePage from './KnowledgeBasePage';
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
 
 // GEMINI_TEST_COMMENT
@@ -31,6 +33,7 @@ const AppPage = () => {
     const [isLoadingCases, setIsLoadingCases] = useState(true); // New loading state
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [expandedRows, setExpandedRows] = useState(new Set());
+    const [currentPage, setCurrentPage] = useState('testcases');
 
     const [copiedId, setCopiedId] = useState(null);
 
@@ -367,55 +370,61 @@ const AppPage = () => {
 
     return (
         <div className={`flex h-screen bg-gray-100 dark:bg-gray-900`}>
-            <Sidebar isMobileOpen={isMobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} isPinned={isSidebarPinned} uniqueProducts={uniqueProducts} selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} isLoadingCases={isLoadingCases} />
+            <Sidebar isMobileOpen={isMobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} isPinned={isSidebarPinned} uniqueProducts={uniqueProducts} selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} isLoadingCases={isLoadingCases} currentPage={currentPage} setCurrentPage={setCurrentPage} />
             <div className={`flex-1 flex flex-col transition-all duration-300`}>
                 <Header setMobileSidebarOpen={setMobileSidebarOpen} setSidebarPinned={setSidebarPinned} isSidebarPinned={isSidebarPinned} setAiModalOpen={setAiModalOpen} setCreateModalOpen={setCreateModalOpen} user={user} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
                 <main className="flex-1 p-6 overflow-y-auto">
-                    {isLoadingCases ? (
-                        <div className="text-center py-20">
-                            <svg className="animate-spin h-8 w-8 text-gray-500 dark:text-gray-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <h3 className="mt-2 text-2xl font-semibold text-gray-700 dark:text-gray-300">Loading test cases...</h3>
-                            <p className="mt-2 text-gray-500 dark:text-gray-400">Please wait while we fetch your data.</p>
-                        </div>
-                    ) : finalizedDocs.length > 0 && (selectedProduct ? groupedByProductAndDomain.length > 0 : filteredDomainGroups.length > 0) ? (
-                        <div className='space-y-6'>
-                            {(selectedProduct ? groupedByProductAndDomain : filteredDomainGroups).map(domainGroup => (
-                                <div key={domainGroup.domain} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm">
-                                    <button onClick={() => toggleDomain(domainGroup.domain)} className='w-full flex justify-between items-center p-5 text-left'>
-                                        <span className='text-lg font-semibold text-gray-900 dark:text-gray-100'>{domainGroup.domain} <span className='text-base font-normal text-gray-500 dark:text-gray-400'>({domainGroup.test_cases.length} cases)</span></span>
-                                        <ChevronDownIcon className={`w-5 h-5 transform transition-transform text-gray-500 dark:text-gray-400 ${openDomains.has(domainGroup.domain) ? 'rotate-180' : ''}`} />
-                                    </button>
-                                    {openDomains.has(domainGroup.domain) && (
-                                        <div className='p-5 border-t border-gray-200 dark:border-gray-700'>
-                                            <TestCaseTable 
-                                                testCases={domainGroup.test_cases} 
-                                                handleDelete={(caseId, docId) => handleDeleteTestCase(caseId, docId)}
-                                                expandedRows={expandedRows}
-                                                toggleRow={toggleRow}
-                                                copiedId={copiedId}
-                                                handleCopy={handleCopy}
-                                                handleCreateJiraIssue={handleCreateJiraIssue}
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    ) : finalizedDocs.length > 0 && searchQuery ? (
-                        <EmptyState 
-                            icon={<SearchIcon />} 
-                            title="No results found" 
-                            message={`Your search for "${searchQuery}" did not match any test cases.`} 
-                        />
+                    {currentPage === 'knowledgebase' ? (
+                        <KnowledgeBasePage />
                     ) : (
-                        <EmptyState 
-                            icon={<EmptyStateIcon />} 
-                            title="No test cases finalized yet" 
-                            message="Click 'Generate with AI' or 'Create Test Case' to start."
-                        />
+                        <>
+                            {isLoadingCases ? (
+                                <div className="text-center py-20">
+                                    <svg className="animate-spin h-8 w-8 text-gray-500 dark:text-gray-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <h3 className="mt-2 text-2xl font-semibold text-gray-700 dark:text-gray-300">Loading test cases...</h3>
+                                    <p className="mt-2 text-gray-500 dark:text-gray-400">Please wait while we fetch your data.</p>
+                                </div>
+                            ) : finalizedDocs.length > 0 && (selectedProduct ? groupedByProductAndDomain.length > 0 : filteredDomainGroups.length > 0) ? (
+                                <div className='space-y-6'>
+                                    {(selectedProduct ? groupedByProductAndDomain : filteredDomainGroups).map(domainGroup => (
+                                        <div key={domainGroup.domain} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm">
+                                            <button onClick={() => toggleDomain(domainGroup.domain)} className='w-full flex justify-between items-center p-5 text-left'>
+                                                <span className='text-lg font-semibold text-gray-900 dark:text-gray-100'>{domainGroup.domain} <span className='text-base font-normal text-gray-500 dark:text-gray-400'>({domainGroup.test_cases.length} cases)</span></span>
+                                                <ChevronDownIcon className={`w-5 h-5 transform transition-transform text-gray-500 dark:text-gray-400 ${openDomains.has(domainGroup.domain) ? 'rotate-180' : ''}`} />
+                                            </button>
+                                            {openDomains.has(domainGroup.domain) && (
+                                                <div className='p-5 border-t border-gray-200 dark:border-gray-700'>
+                                                    <TestCaseTable 
+                                                        testCases={domainGroup.test_cases} 
+                                                        handleDelete={(caseId, docId) => handleDeleteTestCase(caseId, docId)}
+                                                        expandedRows={expandedRows}
+                                                        toggleRow={toggleRow}
+                                                        copiedId={copiedId}
+                                                        handleCopy={handleCopy}
+                                                        handleCreateJiraIssue={handleCreateJiraIssue}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : finalizedDocs.length > 0 && searchQuery ? (
+                                <EmptyState 
+                                    icon={<SearchIcon />} 
+                                    title="No results found" 
+                                    message={`Your search for "${searchQuery}" did not match any test cases.`} 
+                                />
+                            ) : (
+                                <EmptyState 
+                                    icon={<EmptyStateIcon />} 
+                                    title="No test cases finalized yet" 
+                                    message="Click 'Generate with AI' or 'Create Test Case' to start."
+                                />
+                            )}
+                        </>
                     )}
                 </main>
             </div>

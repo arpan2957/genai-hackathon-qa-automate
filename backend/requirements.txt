@@ -13,3 +13,5 @@ firebase-admin==6.1.0
 google-cloud-firestore==2.21.0
 google-adk==1.14.0
 google-cloud-storage==2.19.0
+google-cloud-aiplatform==1.57.0
+google-cloud-bigquery==3.25.0

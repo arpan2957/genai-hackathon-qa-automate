@@ -15,7 +15,8 @@ import {
     FolderIcon as HeroFolderIcon,
     ComputerDesktopIcon as HeroComputerDesktopIcon,
     CheckCircleIcon as HeroCheckCircleIcon,
-    XCircleIcon as HeroXCircleIcon
+    XCircleIcon as HeroXCircleIcon,
+    CircleStackIcon as HeroCircleStackIcon
 } from '@heroicons/react/24/outline';
 
 export const UploadIcon = (props) => <ArrowUpTrayIcon {...props} />;
@@ -35,3 +36,4 @@ export const FolderIcon = (props) => <HeroFolderIcon {...props} />;
 export const DesktopIcon = (props) => <HeroComputerDesktopIcon {...props} />;
 export const CheckCircleIcon = (props) => <HeroCheckCircleIcon {...props} />;
 export const XCircleIcon = (props) => <HeroXCircleIcon {...props} />;
+export const DatabaseIcon = (props) => <HeroCircleStackIcon {...props} />; 

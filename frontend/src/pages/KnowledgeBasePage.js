@@ -70,21 +70,21 @@ const KnowledgeBasePage = () => {
     };
 
     return (
-        <div className="p-6">
+        <div className="p-6 bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
             <h1 className="text-2xl font-bold mb-4">Knowledge Base</h1>
 
             <div className="mb-4">
-                <input type="file" onChange={handleFileUpload} />
+                <input type="file" onChange={handleFileUpload} className="dark:text-gray-100" />
             </div>
 
             {isLoading ? (
                 <p>Loading documents...</p>
             ) : (
-                <ul>
+                <ul className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm">
                     {documents.map(doc => (
-                        <li key={doc.id} className="flex justify-between items-center p-2 border-b">
+                        <li key={doc.id} className="flex justify-between items-center p-4 border-b dark:border-gray-700">
                             <span>{doc.filename}</span>
-                            <button onClick={() => handleDelete(doc.id)} className="text-red-500">Delete</button>
+                            <button onClick={() => handleDelete(doc.id)} className="text-red-500 hover:text-red-700">Delete</button>
                         </li>
                     ))}
                 </ul>

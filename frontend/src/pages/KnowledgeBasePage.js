@@ -74,7 +74,10 @@ const KnowledgeBasePage = () => {
             <h1 className="text-2xl font-bold mb-4">Knowledge Base</h1>
 
             <div className="mb-4">
-                <input type="file" onChange={handleFileUpload} className="dark:text-gray-100" />
+                <label className="bg-cyan-600 text-white px-4 py-2 rounded-lg hover:bg-cyan-700 cursor-pointer">
+                    Browse Files
+                    <input type="file" onChange={handleFileUpload} className="hidden" />
+                </label>
             </div>
 
             {isLoading ? (

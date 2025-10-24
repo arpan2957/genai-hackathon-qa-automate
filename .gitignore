@@ -40,7 +40,6 @@ misc/
 robots.txt
 .firebaserc
 .firebase/
-tests/
 
 # Gemini files
 GEMINI.md

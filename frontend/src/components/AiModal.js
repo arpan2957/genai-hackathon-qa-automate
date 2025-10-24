@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
 
-const AiModal = ({ isOpen, onClose, onFinalize }) => {
+const AiModal = ({ isOpen, onClose, onFinalize, getAuthToken }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [generatedResult, setGeneratedResult] = useState(null); // Will store { product_name, domains: [...] }
     const [expandedRows, setExpandedRows] = useState(new Set());
@@ -18,6 +18,7 @@ const AiModal = ({ isOpen, onClose, onFinalize }) => {
     const [productName, setProductName] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
     const [refinementPrompt, setRefinementPrompt] = useState("");
+    const [imagePreview, setImagePreview] = useState(null);
 
     useEffect(() => {
         if (!isOpen) {
@@ -29,6 +30,7 @@ const AiModal = ({ isOpen, onClose, onFinalize }) => {
             setProductName("");
             setRequirementId("");
             setRefinementPrompt("");
+            setImagePreview(null);
         }
     }, [isOpen]);
 
@@ -45,6 +47,13 @@ const AiModal = ({ isOpen, onClose, onFinalize }) => {
         if (file) {
             setSelectedFile(file);
             setRequirement(`File selected: ${file.name}`);
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setImagePreview(reader.result);
+                };
+                reader.readAsDataURL(file);
+            }
         }
     };
 
@@ -63,13 +72,29 @@ const AiModal = ({ isOpen, onClose, onFinalize }) => {
             let requestBody = {};
 
             if (selectedFile) {
-                const formData = new FormData();
-                formData.append('file', selectedFile);
-                toast.loading("Uploading and parsing document...");
-                const uploadResponse = await fetch(`${BACKEND_URL}/api/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
-                if (!uploadResponse.ok) throw new Error((await uploadResponse.json()).detail || 'Failed to upload file.');
-                const uploadData = await uploadResponse.json();
-                requestBody = { document_text: uploadData.text, product_name: productName, requirement_id: requirementId };
+                if (selectedFile.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(selectedFile);
+                    reader.onloadend = async () => {
+                        const base64Image = reader.result;
+                        requestBody = { 
+                            requirement: requirement,
+                            image_data: base64Image, 
+                            product_name: productName, 
+                            requirement_id: requirementId 
+                        };
+                        await sendGenerateRequest(token, requestBody);
+                    };
+                } else {
+                    const formData = new FormData();
+                    formData.append('file', selectedFile);
+                    toast.loading("Uploading and parsing document...");
+                    const uploadResponse = await fetch(`${BACKEND_URL}/api/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
+                    if (!uploadResponse.ok) throw new Error((await uploadResponse.json()).detail || 'Failed to upload file.');
+                    const uploadData = await uploadResponse.json();
+                    requestBody = { document_text: uploadData.text, product_name: productName, requirement_id: requirementId };
+                    await sendGenerateRequest(token, requestBody);
+                }
             } else {
                 requestBody = { 
                     requirement, 
@@ -83,32 +108,35 @@ const AiModal = ({ isOpen, onClose, onFinalize }) => {
                         requestBody.test_cases = test_cases_for_refinement;
                     }
                 }
+                await sendGenerateRequest(token, requestBody);
             }
-
-            toast.dismiss();
-            toast.loading(refinementPrompt ? "Refining test cases..." : "Generating test cases with AI...");
-            const generateResponse = await fetch(`${BACKEND_URL}/api/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(requestBody) });
-            if (!generateResponse.ok) throw new Error((await generateResponse.json()).detail || 'An error occurred.');
-            
-            const data = await generateResponse.json();
-            setGeneratedResult(data);
-            // Automatically open all domains by default
-            setOpenDomains(new Set(data.domains.map(d => d.domain)));
-
-            toast.dismiss();
-            toast.success("Test cases generated successfully!");
 
         } catch (err) {
             console.error(err);
             toast.error(`Error: ${err.message}`);
             toast.dismiss();
-        } finally {
             setIsLoading(false);
         }
     };
 
+    const sendGenerateRequest = async (token, requestBody) => {
+        toast.dismiss();
+        toast.loading(refinementPrompt ? "Refining test cases..." : "Generating test cases with AI...");
+        const generateResponse = await fetch(`${BACKEND_URL}/api/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(requestBody) });
+        if (!generateResponse.ok) throw new Error((await generateResponse.json()).detail || 'An error occurred.');
+        
+        const data = await generateResponse.json();
+        setGeneratedResult(data);
+        // Automatically open all domains by default
+        setOpenDomains(new Set(data.domains.map(d => d.domain)));
+
+        toast.dismiss();
+        toast.success("Test cases generated successfully!");
+        setIsLoading(false);
+    };
+
     const handleFinalize = () => {
-        onFinalize(generatedResult);
+        onFinalize({ ...generatedResult, requirement });
         onClose();
     };
 
@@ -250,10 +278,11 @@ const AiModal = ({ isOpen, onClose, onFinalize }) => {
                                     <label htmlFor="file-upload" className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50">
                                         <UploadIcon />
                                         <p className="text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold text-cyan-600">Click to upload</span> or drag and drop</p>
-                                        <p className="text-xs text-gray-500">{selectedFile ? selectedFile.name : 'PDF, DOCX, TXT'}</p>
-                                        <input id="file-upload" type="file" className="hidden" onChange={handleFileChange} accept=".pdf,.docx,.txt" />
+                                        <p className="text-xs text-gray-500">{selectedFile ? selectedFile.name : 'PDF, DOCX, TXT, PNG, JPG'}</p>
+                                        <input id="file-upload" type="file" className="hidden" onChange={handleFileChange} accept=".pdf,.docx,.txt,image/png,image/jpeg" />
                                     </label>
-                                    {selectedFile && <button onClick={() => {setSelectedFile(null); setRequirement('');}} className="text-xs text-red-500 mt-1 hover:underline">Clear selection</button>}
+                                    {imagePreview && <img src={imagePreview} alt="Preview" className="mt-4 w-full h-auto rounded-lg" />}
+                                    {selectedFile && <button onClick={() => {setSelectedFile(null); setRequirement(''); setImagePreview(null);}} className="text-xs text-red-500 mt-1 hover:underline">Clear selection</button>}
                                 </div>
                             </div>
                             <div className="space-y-4">
@@ -282,7 +311,7 @@ const AiModal = ({ isOpen, onClose, onFinalize }) => {
                                     </button>
                                     {openDomains.has(domainGroup.domain) && (
                                         <div className='p-4'>
-                                            <TestCaseTable testCases={domainGroup.test_cases} expandedRows={expandedRows} toggleRow={toggleRow} copiedId={copiedId} handleCopy={handleCopy} />
+                                            <TestCaseTable testCases={domainGroup.test_cases} expandedRows={expandedRows} toggleRow={toggleRow} copiedId={copiedId} handleCopy={handleCopy} requirement={requirement} getAuthToken={getAuthToken} backendUrl={BACKEND_URL} />
                                         </div>
                                     )}
                                 </div>

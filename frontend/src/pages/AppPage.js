@@ -45,11 +45,11 @@ const AppPage = () => {
         });
     };
 
-    const handleCreateJiraIssue = async (testCase) => {
+    const handleCreateALMIssue = async (testCase, alm) => {
         if (!auth.currentUser) return;
         try {
             const token = await auth.currentUser.getIdToken();
-            const response = await fetch(`${BACKEND_URL}/api/jira/create-issue`, {
+            const response = await fetch(`${BACKEND_URL}/api/integrations/${alm}/create-issue`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ 
@@ -57,27 +57,39 @@ const AppPage = () => {
                     project_key: 'PROJ', // Replace with a dynamic project key if needed
                 }),
             });
-            if (!response.ok) throw new Error((await response.json()).detail || 'Failed to create Jira issue.');
+            if (!response.ok) throw new Error((await response.json()).detail || `Failed to create ${alm} issue.`);
             const data = await response.json();
-            toast.success(<span>Jira issue <a href={data.url} target="_blank" rel="noopener noreferrer" className="underline">{data.issue_key}</a> created!</span>);
+            toast.success(<span>{alm} issue <a href={data.url} target="_blank" rel="noopener noreferrer" className="underline">{data.issue_key}</a> created!</span>);
         } catch (error) {
-            toast.error(`Error creating Jira issue: ${error.message}`);
+            toast.error(`Error creating ${alm} issue: ${error.message}`);
         }
     };
 
     // --- Data Fetching and Persistence ---
     const fetchFinalizedCases = async () => {
-        if (!auth.currentUser) return;
+        console.log('fetchFinalizedCases called');
+        if (!auth.currentUser) {
+            console.log('No current user, returning');
+            return;
+        }
         setIsLoadingCases(true); // Set loading to true
         try {
+            console.log('Fetching finalized cases for user:', auth.currentUser.uid);
             const token = await auth.currentUser.getIdToken();
+            console.log('Got auth token:', token);
             const response = await fetch(`${BACKEND_URL}/api/finalized-cases`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
-            if (!response.ok) throw new Error('Failed to fetch test cases.');
+            console.log('Got response from backend:', response);
+            if (!response.ok) {
+                console.error('Failed to fetch test cases, response not ok', response);
+                throw new Error('Failed to fetch test cases.');
+            }
             const data = await response.json();
+            console.log('Got data from backend:', data);
             setFinalizedDocs(data);
         } catch (error) {
+            console.error('Error in fetchFinalizedCases:', error);
             toast.error(`Error fetching data: ${error.message}`);
         } finally {
             setIsLoadingCases(false); // Set loading to false regardless of success or failure
@@ -135,7 +147,7 @@ const AppPage = () => {
                     }
                 });
 
-                const updatedDoc = { product_name: existingDoc.product_name, domains: updatedDomains };
+                const updatedDoc = { product_name: existingDoc.product_name, domains: updatedDomains, requirement: generatedResult.requirement };
 
                 // Update the existing document in the backend
                 await fetch(`${BACKEND_URL}/api/finalized-cases/${existingDoc.id}`, {
@@ -288,7 +300,8 @@ const AppPage = () => {
                         ...testCase,
                         product_name: doc.product_name,
                         domain: domainGroup.domain || 'Default',
-                        docId: doc.id
+                        docId: doc.id,
+                        requirement: doc.requirement
                     });
                 });
             });
@@ -335,7 +348,8 @@ const AppPage = () => {
                 ...testCase,
                 product_name: doc.product_name,
                 domain: domainGroup.domain || 'Default',
-                docId: doc.id
+                docId: doc.id,
+                requirement: doc.requirement
             }))));
 
         let filteredCases = casesForSelectedProduct;
@@ -404,7 +418,9 @@ const AppPage = () => {
                                                         toggleRow={toggleRow}
                                                         copiedId={copiedId}
                                                         handleCopy={handleCopy}
-                                                        handleCreateJiraIssue={handleCreateJiraIssue}
+                                                        handleCreateALMIssue={handleCreateALMIssue}
+                                                        requirement={domainGroup.test_cases[0].requirement} getAuthToken={() => auth.currentUser.getIdToken()}                                                    
+                                                        backendUrl={BACKEND_URL}
                                                     />
                                                 </div>
                                             )}
@@ -433,6 +449,7 @@ const AppPage = () => {
                 isOpen={isAiModalOpen} 
                 onClose={() => setAiModalOpen(false)} 
                 onFinalize={handleFinalize} 
+                getAuthToken={() => auth.currentUser.getIdToken()} 
             />}
             {isCreateModalOpen && <CreateTestCaseModal 
                 isOpen={isCreateModalOpen} 

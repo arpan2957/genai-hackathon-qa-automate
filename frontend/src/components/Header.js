@@ -1,11 +1,9 @@
 import React from 'react';
-import { MenuIcon, SearchIcon, SparklesIcon, SunIcon, MoonIcon } from './icons';
-import { useTheme } from '../contexts/ThemeContext';
+import { MenuIcon, SearchIcon, SparklesIcon } from './icons';
 import { auth } from '../firebase';
 import toast from 'react-hot-toast';
 
 const Header = ({ setMobileSidebarOpen, setSidebarPinned, isSidebarPinned, setAiModalOpen, setCreateModalOpen, user, searchQuery, setSearchQuery }) => {
-    const { theme, toggleTheme } = useTheme();
 
     const handleLogout = async () => {
         try {

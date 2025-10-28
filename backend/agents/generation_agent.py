@@ -108,10 +108,13 @@ Requirements:
 """
 
 class GenerationAgent(Agent):
-    def __init__(self, model_name: str = GENAI_MODEL):
+    vision_model: str
+
+    def __init__(self, model_name: str = GENAI_MODEL, vision_model: str = GENAI_VISION_MODEL):
         super().__init__(
             name="generation_agent",
             model=model_name,
+            vision_model=vision_model,
             tools=[
                 self.generate_initial_test_cases,
                 self.refine_test_cases,

@@ -1,4 +1,5 @@
 import os
+import datetime
 from google.cloud import bigquery, storage
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -41,15 +42,18 @@ def init_db():
             except Exception:
                 schema = [
                     bigquery.SchemaField("user_id", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("email", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("event_type", "STRING", mode="NULLABLE"),
-                    bigquery.SchemaField("timestamp", "TIMESTAMP", mode="NULLABLE"),
+                    bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
+                    bigquery.SchemaField("ip_address", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("user_agent", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("document_id", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("test_case_id", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("filename", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("integration_name", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("issue_key", "STRING", mode="NULLABLE"),
                     bigquery.SchemaField("rating", "STRING", mode="NULLABLE"),
-                    bigquery.SchemaField("email", "STRING", mode="NULLABLE"),
+                    bigquery.SchemaField("event_details", "STRING", mode="NULLABLE"),
                 ]
                 table = bigquery.Table(table_id, schema=schema)
                 bq_client.create_table(table)
@@ -68,6 +72,25 @@ def get_db():
 
 def get_bq_client():
     return bq_client
+
+def log_event(user_id: str, email: str, event_type: str, details: dict):
+    """Logs an audit event to BigQuery."""
+    if bq_client:
+        try:
+            table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
+            row_to_insert = {
+                "user_id": user_id,
+                "email": email,
+                "event_type": event_type,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+                **details
+            }
+            errors = bq_client.insert_rows_json(table_id, [row_to_insert])
+            if errors:
+                print(f"Encountered errors while inserting rows: {errors}")
+        except Exception as e:
+            print(f"Failed to log event to BigQuery: {e}")
+
 
 def close_db_connection():
     # No explicit close needed for these clients

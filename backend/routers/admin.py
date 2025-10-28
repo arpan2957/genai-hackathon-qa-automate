@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from typing import Dict, Any, List
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
+from typing import Dict, Any, List, Optional
 import json
 from datetime import datetime
 import os
+from google.cloud import bigquery
 
-from models import FineTuningResponse, UserProfile
+from models import FineTuningResponse, UserProfile, AuditLogEntry, AuditSummaryEntry
 from security import is_admin
 from database import db, storage_client, bq_client
-from config import PROJECT_ID, BIGQUERY_DATASET, BIGQUERY_TABLE, AUDIT_TABLE
+from audit import log_audit_event
+from config import PROJECT_ID, BIGQUERY_DATASET, AUDIT_TABLE
 from google.cloud import aiplatform
 from firebase_admin import auth
 
@@ -46,7 +48,7 @@ def run_finetuning_pipeline(gcs_uri: str) -> aiplatform.PipelineJob:
 
 @router.post("/api/admin/trigger-finetuning", response_model=FineTuningResponse, tags=["Admin"], summary="Trigger a Model Fine-Tuning Job",
     description="Starts a new fine-tuning job on Vertex AI using the collected feedback data.")
-async def trigger_finetuning(force: bool = False, is_admin: bool = Depends(is_admin)):
+async def trigger_finetuning(req: Request, force: bool = False, user: dict = Depends(is_admin)):
     try:
         # 1. Check for currently active pipelines to prevent concurrent runs
         active_pipelines = aiplatform.PipelineJob.list(
@@ -105,6 +107,7 @@ async def trigger_finetuning(force: bool = False, is_admin: bool = Depends(is_ad
 
         # 6. Create and run a fine-tuning job on Vertex AI
         job = run_finetuning_pipeline(gcs_uri=gcs_uri)
+        log_audit_event(req, user, "trigger_finetuning", details={"job_id": job.resource_name, "gcs_uri": gcs_uri, "num_examples": len(training_data)})
 
         # 7. Mark the feedback documents as processed in a batch write
         batch = db.batch()
@@ -128,16 +131,17 @@ async def trigger_finetuning(force: bool = False, is_admin: bool = Depends(is_ad
 
 @router.get("/api/admin/users", response_model=List[UserProfile], tags=["Admin"], summary="List All Users",
     description="Retrieves a list of all registered users.")
-async def list_users(is_admin: bool = Depends(is_admin)):
+async def list_users(req: Request, user: dict = Depends(is_admin)):
     try:
+        log_audit_event(req, user, "list_users")
         users = auth.list_users().users
         user_profiles = []
-        for user in users:
+        for u in users:
             user_profiles.append(UserProfile(
-                uid=user.uid,
-                email=user.email,
-                display_name=user.display_name,
-                created_at=user.user_metadata.creation_timestamp
+                uid=u.uid,
+                email=u.email,
+                display_name=u.display_name,
+                created_at=u.user_metadata.creation_timestamp
             ))
         return user_profiles
     except Exception as e:
@@ -145,40 +149,111 @@ async def list_users(is_admin: bool = Depends(is_admin)):
 
 @router.delete("/api/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin"], summary="Delete User and All Associated Data",
     description="Deletes a user from Firebase Authentication and all their associated data in Firestore and BigQuery.")
-async def delete_user(user_id: str, is_admin: bool = Depends(is_admin)):
+async def delete_user(req: Request, user_id: str, user: dict = Depends(is_admin)):
     try:
+        # Log the admin action first
+        log_audit_event(req, user, "delete_user", details={"deleted_user_id": user_id})
+
         # 1. Delete from Firebase Authentication
         auth.delete_user(user_id)
 
         # 2. Delete user's data from Firestore
         user_doc_ref = db.collection("users").document(user_id)
         
-        # Delete finalized_test_cases subcollection
-        for doc in user_doc_ref.collection("finalized_test_cases").stream():
-            doc.reference.delete()
+        # Delete subcollections
+        for subcollection in ["finalized_test_cases", "knowledge_base"]:
+            for doc in user_doc_ref.collection(subcollection).stream():
+                doc.reference.delete()
         
-        # Delete knowledge_base subcollection
-        for doc in user_doc_ref.collection("knowledge_base").stream():
-            doc.reference.delete()
-        
-        # Delete the user's main document
         user_doc_ref.delete()
 
         # 3. Delete user's data from BigQuery
-        # Delete from knowledge_base table
-        kb_table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}"
-        kb_query = f"DELETE FROM `{kb_table_id}` WHERE user_id = '{user_id}'"
-        bq_client.query(kb_query).result()
+        table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
+        query = f"DELETE FROM `{table_id}` WHERE user_id = @user_id"
+        job_config = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)])
+        bq_client.query(query, job_config=job_config).result()
 
-        # Delete from audit_log table (anonymized user_id might be stored here)
-        audit_table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
-        audit_query = f"DELETE FROM `{audit_table_id}` WHERE user_id = '{user_id}'"
-        bq_client.query(audit_query).result()
-
-        return status.HTTP_204_NO_CONTENT
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     except auth.UserNotFoundError:
         raise HTTPException(status_code=404, detail="User not found.")
     except Exception as e:
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/admin/audit-logs", response_model=List[AuditLogEntry], tags=["Admin"], summary="Get Detailed Audit Logs",
+    description="Retrieves detailed audit logs with filtering capabilities.")
+async def get_audit_logs(
+    req: Request,
+    user: dict = Depends(is_admin),
+    user_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+):
+    try:
+        log_audit_event(req, user, "get_audit_logs", details={"filter_user_id": user_id, "filter_event_type": event_type, "filter_start_date": str(start_date), "filter_end_date": str(end_date)})
+        
+        table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
+        query = f"SELECT * FROM `{table_id}` WHERE 1=1"
+        params = []
+        param_types = []
+
+        if user_id:
+            query += " AND user_id = @user_id"
+            params.append(bigquery.ScalarQueryParameter("user_id", "STRING", user_id))
+        if event_type:
+            query += " AND event_type = @event_type"
+            params.append(bigquery.ScalarQueryParameter("event_type", "STRING", event_type))
+        if start_date:
+            query += " AND timestamp >= @start_date"
+            params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_date))
+        if end_date:
+            query += " AND timestamp <= @end_date"
+            params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_date))
+
+        query += " ORDER BY timestamp DESC LIMIT 1000"
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
+        query_job = bq_client.query(query, job_config=job_config)
+        
+        results = [dict(row) for row in query_job.result()]
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/admin/audit-summary", response_model=List[AuditSummaryEntry], tags=["Admin"], summary="Get Audit Summary Statistics",
+    description="Retrieves aggregated statistics of audit events.")
+async def get_audit_summary(
+    req: Request,
+    user: dict = Depends(is_admin),
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+):
+    try:
+        log_audit_event(req, user, "get_audit_summary", details={"filter_start_date": str(start_date), "filter_end_date": str(end_date)})
+
+        table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
+        query = f"""
+            SELECT event_type, COUNT(*) as count
+            FROM `{table_id}`
+            WHERE 1=1
+        """
+        params = []
+
+        if start_date:
+            query += " AND timestamp >= @start_date"
+            params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_date))
+        if end_date:
+            query += " AND timestamp <= @end_date"
+            params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_date))
+
+        query += " GROUP BY event_type ORDER BY count DESC"
+
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
+        query_job = bq_client.query(query, job_config=job_config)
+
+        results = [dict(row) for row in query_job.result()]
+        return results
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

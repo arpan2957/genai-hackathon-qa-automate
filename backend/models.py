@@ -94,3 +94,16 @@ class UserProfile(BaseModel):
     email: Optional[str] = None
     display_name: Optional[str] = None
     created_at: Optional[int] = None
+
+class AuditLogEntry(BaseModel):
+    user_id: Optional[str] = None
+    email: Optional[str] = None
+    event_type: Optional[str] = None
+    timestamp: datetime
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    event_details: Optional[str] = None
+
+class AuditSummaryEntry(BaseModel):
+    event_type: str
+    count: int

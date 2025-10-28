@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from '../firebase';
 import toast from 'react-hot-toast';
-import { DeleteIcon } from '../components/icons';
+import { DeleteIcon, ChartBarIcon } from '../components/icons';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
 
-const AdminPage = () => {
+const AdminPage = ({ setCurrentPage, setPrefilledFilters }) => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -45,6 +45,11 @@ const AdminPage = () => {
         } catch (err) {
             toast.error(`Error deleting user: ${err.message}`);
         }
+    };
+
+    const handleViewAuditTrail = (userId) => {
+        setPrefilledFilters({ user_id: userId });
+        setCurrentPage('admin-reporting');
     };
 
     useEffect(() => {
@@ -92,10 +97,18 @@ const AdminPage = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">{userProfile.email}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">{userProfile.display_name || 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">{new Date(userProfile.created_at).toLocaleString()}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
+                                        <button
+                                            onClick={() => handleViewAuditTrail(userProfile.uid)}
+                                            className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300"
+                                            title="View Audit Trail"
+                                        >
+                                            <ChartBarIcon className="h-5 w-5" />
+                                        </button>
                                         <button
                                             onClick={() => handleDeleteUser(userProfile.uid)}
                                             className="text-red-600 hover:text-red-900 dark:text-red-500 dark:hover:text-red-400"
+                                            title="Delete User"
                                         >
                                             <DeleteIcon className="h-5 w-5" />
                                         </button>

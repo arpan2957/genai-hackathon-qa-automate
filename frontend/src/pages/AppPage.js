@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import KnowledgeBasePage from './KnowledgeBasePage';
 import ReportingPage from './ReportingPage';
 import AdminPage from './AdminPage';
+import AdminReportingPage from './AdminReportingPage';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
 
@@ -38,6 +39,7 @@ const AppPage = () => {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [expandedRows, setExpandedRows] = useState(new Set());
     const [currentPage, setCurrentPage] = useState('testcases');
+    const [prefilledFilters, setPrefilledFilters] = useState({});
 
     const [copiedId, setCopiedId] = useState(null);
 
@@ -426,7 +428,9 @@ const AppPage = () => {
                     ) : currentPage === 'reporting' ? (
                         <ReportingPage />
                     ) : currentPage === 'admin' && isAdmin ? (
-                        <AdminPage />
+                        <AdminPage setCurrentPage={setCurrentPage} setPrefilledFilters={setPrefilledFilters} />
+                    ) : currentPage === 'admin-reporting' && isAdmin ? (
+                        <AdminReportingPage prefilledFilters={prefilledFilters} />
                     ) : (
                         <>
                             {isLoadingCases ? (

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, Request, status, HTTPException
 from typing import Dict, Any
 from datetime import datetime
 
@@ -11,19 +11,18 @@ router = APIRouter()
 
 @router.post("/api/feedback", status_code=status.HTTP_201_CREATED, tags=["Feedback"], summary="Submit Feedback for a Generated Test Case",
     description="Submits feedback on the quality of a generated test case, which will be used for future model fine-tuning.")
-async def submit_feedback(request: FeedbackRequest, user: Dict[str, Any] = Depends(get_current_user)):
+async def submit_feedback(req: Request, request_body: FeedbackRequest, user: Dict[str, Any] = Depends(get_current_user)):
     try:
-        feedback_data = request.dict()
+        feedback_data = request_body.dict()
         feedback_data['user_id'] = user['uid']
         feedback_data['timestamp'] = datetime.now()
         db.collection('finetuning_data').add(feedback_data)
-        log_audit_event({
-            "user_id": user["uid"],
-            "event_type": "submit_feedback",
-            "timestamp": datetime.now().isoformat(),
-            "test_case_id": request.original_test_case.test_case_id,
-            "rating": request.rating
+        
+        log_audit_event(req, user, "submit_feedback", details={
+            "test_case_id": request_body.original_test_case.test_case_id,
+            "rating": request_body.rating
         })
+        
         return {"message": "Feedback submitted successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

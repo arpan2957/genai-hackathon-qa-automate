@@ -76,7 +76,7 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
                         uniqueProducts.map(productName => (
                             <NavLink
                                 key={productName}
-                                onClick={() => setSelectedProduct(productName)}
+                                onClick={() => { setSelectedProduct(productName); setCurrentPage('testcases'); }}
                                 isActive={selectedProduct === productName}
                                 icon={<span className="w-5 h-5 min-w-5 min-h-5"></span>}
                             >
@@ -134,6 +134,7 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
                     <>
                         <div className="px-3 py-2 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase">Admin</div>
                         <NavLink icon={<UsersIcon />} onClick={() => setCurrentPage('admin')} isActive={currentPage === 'admin'}>User Management</NavLink>
+                        <NavLink icon={<ChartBarIcon />} onClick={() => setCurrentPage('admin-reporting')} isActive={currentPage === 'admin-reporting'}>Audit Logs</NavLink>
                         <NavLink icon={<SparklesIcon />} onClick={handleFineTune}>Fine-Tune Model</NavLink>
                     </>
                 )}

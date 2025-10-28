@@ -4,18 +4,26 @@ from datetime import datetime
 
 from models import FeedbackRequest
 from security import get_current_user
-from database import get_db
+from database import db
+from audit import log_audit_event
 
 router = APIRouter()
 
 @router.post("/api/feedback", status_code=status.HTTP_201_CREATED, tags=["Feedback"], summary="Submit Feedback for a Generated Test Case",
     description="Submits feedback on the quality of a generated test case, which will be used for future model fine-tuning.")
-async def submit_feedback(request: FeedbackRequest, user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
+async def submit_feedback(request: FeedbackRequest, user: Dict[str, Any] = Depends(get_current_user)):
     try:
-        feedback_data = request.model_dump()
+        feedback_data = request.dict()
         feedback_data['user_id'] = user['uid']
         feedback_data['timestamp'] = datetime.now()
         db.collection('finetuning_data').add(feedback_data)
+        log_audit_event({
+            "user_id": user["uid"],
+            "event_type": "submit_feedback",
+            "timestamp": datetime.now().isoformat(),
+            "test_case_id": request.original_test_case.test_case_id,
+            "rating": request.rating
+        })
         return {"message": "Feedback submitted successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

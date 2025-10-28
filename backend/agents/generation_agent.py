@@ -1,7 +1,12 @@
 import json
-from typing import List
+from typing import List, Optional
 import google.generativeai as genai
 from google.adk.agents import Agent
+from config import GENAI_MODEL, GENAI_VISION_MODEL
+import requests
+from PIL import Image
+import io
+import base64
 
 # System prompt for generating test cases from a single requirement
 GENERATE_SYSTEM_PROMPT = """
@@ -103,7 +108,7 @@ Requirements:
 """
 
 class GenerationAgent(Agent):
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, model_name: str = GENAI_MODEL):
         super().__init__(
             name="generation_agent",
             model=model_name,
@@ -115,6 +120,35 @@ class GenerationAgent(Agent):
             ]
         )
         self.model = model_name
+        self.vision_model = GENAI_VISION_MODEL
+
+    def _load_image_from_url(self, url: str) -> Image.Image:
+        if url.startswith("gs://"):
+            try:
+                # e.g., gs://my-bucket/path/to/image.jpg
+                bucket_name = url.split("/")[2]
+                blob_name = "/".join(url.split("/")[3:])
+                
+                bucket = storage_client.bucket(bucket_name)
+                blob = bucket.blob(blob_name)
+                
+                image_bytes = blob.download_as_bytes()
+                return Image.open(io.BytesIO(image_bytes))
+            except Exception as e:
+                print(f"Error loading image from GCS URL {url}: {e}")
+                # Return a placeholder image or raise an exception
+                return Image.new('RGB', (60, 30), color = 'grey')
+        elif url.startswith("http://") or url.startswith("https://"):
+            response = requests.get(url)
+            response.raise_for_status()
+            return Image.open(io.BytesIO(response.content))
+        elif url.startswith("data:image/"):
+            # Handle base64 encoded image
+            header, encoded = url.split(",", 1)
+            data = base64.b64decode(encoded)
+            return Image.open(io.BytesIO(data))
+        else:
+            raise ValueError(f"Unsupported image URL format: {url}")
 
     def segment_requirements(self, document_text: str) -> str:
         """Analyzes a large text document and segments it into a list of individual requirements."""
@@ -154,30 +188,40 @@ class GenerationAgent(Agent):
         response = model.generate_content(user_prompt, safety_settings=safety_settings)
         return response.text
 
-    def generate_initial_test_cases(self, requirement: str) -> str:
-        """Generates the initial set of test cases based on a given requirement."""
+    def generate_initial_test_cases(self, requirement: str, images: Optional[List[str]] = None) -> str:
+        """Generates the initial set of test cases based on a given requirement and optional images."""
         model = genai.GenerativeModel(
-            self.model,
+            self.vision_model if images else self.model,
             system_instruction=GENERATE_SYSTEM_PROMPT
         )
-        user_prompt = f'''**Requirement to test:**
-"{requirement}"'''
+        
+        contents = [f'''**Requirement to test:**
+"{requirement}"''']
+        if images:
+            for img_url in images:
+                try:
+                    img = self._load_image_from_url(img_url)
+                    contents.append(img)
+                except Exception as e:
+                    print(f"Error loading image {img_url}: {e}")
+
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
-        response = model.generate_content(user_prompt, safety_settings=safety_settings)
+        response = model.generate_content(contents, safety_settings=safety_settings)
         return response.text
 
-    def refine_test_cases(self, requirement: str, test_cases: str, refinement_prompt: str) -> str:
-        """Refines the existing test cases based on a user's refinement prompt."""
+    def refine_test_cases(self, requirement: str, test_cases: str, refinement_prompt: str, images: Optional[List[str]] = None) -> str:
+        """Refines the existing test cases based on a user's refinement prompt and optional images."""
         model = genai.GenerativeModel(
-            self.model,
+            self.vision_model if images else self.model,
             system_instruction=GENERATE_SYSTEM_PROMPT
         )
-        user_prompt = f'''**Original Requirement:**
+        
+        contents = [f'''**Original Requirement:**
 "{requirement}"
 
 **Existing Test Cases:**
@@ -188,12 +232,20 @@ class GenerationAgent(Agent):
 **Refinement Prompt:**
 "{refinement_prompt}"
 
-Please refine the existing test cases based on the refinement prompt. The output **MUST** be a valid JSON array of objects, following the same schema as before.'''
+Please refine the existing test cases based on the refinement prompt. The output **MUST** be a valid JSON array of objects, following the same schema as before.''']
+        if images:
+            for img_url in images:
+                try:
+                    img = self._load_image_from_url(img_url)
+                    contents.append(img)
+                except Exception as e:
+                    print(f"Error loading image {img_url}: {e}")
+
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
-        response = model.generate_content(user_prompt, safety_settings=safety_settings)
+        response = model.generate_content(contents, safety_settings=safety_settings)
         return response.text

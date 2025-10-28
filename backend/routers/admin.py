@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Dict, Any, List
 import json
 from datetime import datetime
 import os
 
-from models import FineTuningResponse
+from models import FineTuningResponse, UserProfile
 from security import is_admin
-from database import db, storage_client
-from config import PROJECT_ID
+from database import db, storage_client, bq_client
+from config import PROJECT_ID, BIGQUERY_DATASET, BIGQUERY_TABLE, AUDIT_TABLE
 from google.cloud import aiplatform
+from firebase_admin import auth
 
 router = APIRouter()
 
@@ -91,6 +92,63 @@ async def trigger_finetuning(is_admin: bool = Depends(is_admin)):
             message=f"Fine-tuning job has been successfully triggered with {len(training_data)} examples. Data uploaded to {gcs_uri}."
         )
 
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/admin/users", response_model=List[UserProfile], tags=["Admin"], summary="List All Users",
+    description="Retrieves a list of all registered users.")
+async def list_users(is_admin: bool = Depends(is_admin)):
+    try:
+        users = auth.list_users().users
+        user_profiles = []
+        for user in users:
+            user_profiles.append(UserProfile(
+                uid=user.uid,
+                email=user.email,
+                display_name=user.display_name,
+                created_at=user.user_metadata.creation_timestamp
+            ))
+        return user_profiles
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/api/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin"], summary="Delete User and All Associated Data",
+    description="Deletes a user from Firebase Authentication and all their associated data in Firestore and BigQuery.")
+async def delete_user(user_id: str, is_admin: bool = Depends(is_admin)):
+    try:
+        # 1. Delete from Firebase Authentication
+        auth.delete_user(user_id)
+
+        # 2. Delete user's data from Firestore
+        user_doc_ref = db.collection("users").document(user_id)
+        
+        # Delete finalized_test_cases subcollection
+        for doc in user_doc_ref.collection("finalized_test_cases").stream():
+            doc.reference.delete()
+        
+        # Delete knowledge_base subcollection
+        for doc in user_doc_ref.collection("knowledge_base").stream():
+            doc.reference.delete()
+        
+        # Delete the user's main document
+        user_doc_ref.delete()
+
+        # 3. Delete user's data from BigQuery
+        # Delete from knowledge_base table
+        kb_table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{BIGQUERY_TABLE}"
+        kb_query = f"DELETE FROM `{kb_table_id}` WHERE user_id = '{user_id}'"
+        bq_client.query(kb_query).result()
+
+        # Delete from audit_log table (anonymized user_id might be stored here)
+        audit_table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
+        audit_query = f"DELETE FROM `{audit_table_id}` WHERE user_id = '{user_id}'"
+        bq_client.query(audit_query).result()
+
+        return status.HTTP_204_NO_CONTENT
+    except auth.UserNotFoundError:
+        raise HTTPException(status_code=404, detail="User not found.")
     except Exception as e:
         import traceback
         traceback.print_exc()

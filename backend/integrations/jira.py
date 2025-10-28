@@ -26,26 +26,26 @@ class JiraIntegration(ALMIntegration):
         try:
             # Format the test case steps into a string for the Jira description
             steps_str = ""
-            if isinstance(issue_data['test_case'].steps, list):
-                steps_str = "\n".join([f"Step {s['step']}: {s['action']}" for s in issue_data['test_case'].steps])
+            if isinstance(issue_data['test_case']['steps'], list):
+                steps_str = "\n".join([f"Step {s['step']}: {s['action']}" for s in issue_data['test_case']['steps']])
             else:
                 # Improved formatting for manual test case steps
-                manual_steps = str(issue_data['test_case'].steps).split('\n')
+                manual_steps = str(issue_data['test_case']['steps']).split('\n')
                 steps_str = "\n".join([f"- {line.strip()}" for line in manual_steps if line.strip()])
 
             jira_issue_data = {
                 "project": {"key": issue_data['project_key']},
-                "summary": f"{issue_data['test_case'].test_case_id}: {issue_data['test_case'].title}",
+                "summary": f"{issue_data['test_case']['test_case_id']}: {issue_data['test_case']['title']}",
                 "description": f"h2. Test Case Details\n"
-                f"*Test Case ID:* {issue_data['test_case'].test_case_id}\n"
-                f"*Title:* {issue_data['test_case'].title}\n"
-                f"*Priority:* {issue_data['test_case'].priority}\n"
-                f"*Type:* {issue_data['test_case'].type}\n"
-                f"*Compliance:* {issue_data['test_case'].compliance_tag}\n"
+                f"*Test Case ID:* {issue_data['test_case']['test_case_id']}\n"
+                f"*Title:* {issue_data['test_case']['title']}\n"
+                f"*Priority:* {issue_data['test_case']['priority']}\n"
+                f"*Type:* {issue_data['test_case']['type']}\n"
+                f"*Compliance:* {issue_data['test_case']['compliance_tag']}\n"
                 f"h2. Test Steps\n"
                 f"{steps_str}\n"
                 f"h2. Traceability ID\n"
-                f"{issue_data['test_case'].traceability_id}",
+                f"{issue_data['test_case']['traceability_id']}",
                 "issuetype": {"name": issue_data['issue_type']},
             }
             

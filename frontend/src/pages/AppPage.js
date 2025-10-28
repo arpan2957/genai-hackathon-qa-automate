@@ -14,8 +14,11 @@ import { ChevronDownIcon, EmptyStateIcon, SearchIcon } from '../components/icons
 import toast from 'react-hot-toast';
 
 import KnowledgeBasePage from './KnowledgeBasePage';
+import ReportingPage from './ReportingPage';
+import AdminPage from './AdminPage';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
+const ADMIN_EMAIL = process.env.REACT_APP_ADMIN_EMAIL || 'http://127.0.0.1:8000'; // Assuming admin email is set in .env
 
 // GEMINI_TEST_COMMENT
 const AppPage = () => {
@@ -25,6 +28,7 @@ const AppPage = () => {
     const [isCreateModalOpen, setCreateModalOpen] = useState(false);
     const [isLoginModalOpen, setLoginModalOpen] = useState(false);
     const [user, setUser] = useState(null);
+    const [isAdmin, setIsAdmin] = useState(false);
     const [finalizedDocs, setFinalizedDocs] = useState([]); // Will hold [{id, product_name, domains}] from DB
     const [searchQuery, setSearchQuery] = useState("");
     const [openDomains, setOpenDomains] = useState(new Set());
@@ -52,8 +56,8 @@ const AppPage = () => {
             const response = await fetch(`${BACKEND_URL}/api/integrations/${alm}/create-issue`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ 
-                    test_case: testCase, 
+                body: JSON.stringify({
+                    test_case: testCase,
                     project_key: 'PROJ', // Replace with a dynamic project key if needed
                 }),
             });
@@ -92,7 +96,7 @@ const AppPage = () => {
             console.error('Error in fetchFinalizedCases:', error);
             toast.error(`Error fetching data: ${error.message}`);
         } finally {
-            setIsLoadingCases(false); // Set loading to false regardless of success or failure
+            setIsLoadingCases(false); // Set loading to false after fetch
         }
     };
 
@@ -101,9 +105,11 @@ const AppPage = () => {
             setUser(currentUser);
             if (currentUser) {
                 setLoginModalOpen(false);
+                setIsAdmin(currentUser.email === ADMIN_EMAIL);
                 fetchFinalizedCases();
             } else {
                 setLoginModalOpen(true);
+                setIsAdmin(false);
                 setFinalizedDocs([]); // Clear data on logout
             }
         });
@@ -116,7 +122,7 @@ const AppPage = () => {
 
     // --- Event Handlers ---
     const handleFinalize = async (generatedResult) => {
-        if (!auth.currentUser || !generatedResult) return;
+        if (!auth.currentUser) return;
         try {
             const token = await auth.currentUser.getIdToken();
 
@@ -390,6 +396,10 @@ const AppPage = () => {
                 <main className="flex-1 p-6 overflow-y-auto">
                     {currentPage === 'knowledgebase' ? (
                         <KnowledgeBasePage />
+                    ) : currentPage === 'reporting' ? (
+                        <ReportingPage />
+                    ) : currentPage === 'admin' && isAdmin ? (
+                        <AdminPage />
                     ) : (
                         <>
                             {isLoadingCases ? (

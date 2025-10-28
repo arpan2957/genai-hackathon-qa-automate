@@ -1,55 +1,47 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-import time
-from audit import log_audit_event
-from security import get_current_user, get_user_from_request
-from fastapi import Depends
+from firebase_admin import credentials, initialize_app
+import os
+from database import close_db_connection, init_db
+from routers import generation, crud, feedback, integrations, upload, public_api, reporting, admin, knowledge_base
+# from routers import reporting
+# from routers import admin
 
-from database import lifespan
-from routers import admin, crud, feedback, generation, integrations, knowledge_base, upload, reporting, public_api
-
-# --- FastAPI App Initialization ---
+# Initialize FastAPI app
 app = FastAPI(
-    title="AI Test Case Generator API",
-    description="API for generating, managing, and exporting test cases using AI.",
-    version="1.2.0",
-    lifespan=lifespan,
+    title="AI Test Case Generator",
+    description="This API generates test cases from requirements using AI.",
+    version="1.0.0"
 )
+    
+# CORS Middleware
+origins = [
+    "http://localhost:3000"
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def audit_log_middleware(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
+@app.on_event("startup")
+async def startup_event():
+    init_db()
 
-    user = await get_user_from_request(request)
+@app.on_event("shutdown")
+async def shutdown_event():
+    close_db_connection()
 
-    log_audit_event({
-        "timestamp": time.time(),
-        "user_id": user['uid'] if user else None,
-        "email": user['email'] if user else None,
-        "endpoint": request.url.path,
-        "method": request.method,
-        "status_code": response.status_code,
-        "process_time": process_time
-    })
-
-    return response
-
-
+# Include routers
 app.include_router(generation.router)
 app.include_router(crud.router)
-app.include_router(knowledge_base.router)
-app.include_router(admin.router)
-app.include_router(integrations.router)
 app.include_router(feedback.router)
+app.include_router(integrations.router)
 app.include_router(upload.router)
-app.include_router(reporting.router)
 app.include_router(public_api.router)
+app.include_router(reporting.router)
+app.include_router(admin.router)
+app.include_router(knowledge_base.router)

@@ -1,14 +1,34 @@
-from fastapi import APIRouter, Depends, Response, status, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from typing import List, Dict, Any
+from datetime import datetime
 
-from models import *
+from models import CreateFinalizedCasesRequest, FinalizedCasesDoc, TestCase
 from security import get_current_user
 from database import get_db
+from audit import log_audit_event
 
 router = APIRouter()
 
-@router.get("/api/finalized-cases", response_model=List[FinalizedCasesDoc], tags=["Finalized Cases"], summary="Get All Finalized Test Case Documents",
-    description="Retrieves a list of all test case documents that have been finalized by the user.")
+@router.post("/api/finalized-cases", status_code=status.HTTP_201_CREATED, tags=["Test Cases"], summary="Finalize Test Cases",
+    description="Saves a generated test case document to the user's finalized collection in Firestore.")
+async def create_finalized_cases(request: CreateFinalizedCasesRequest, user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
+    try:
+        user_id = user["uid"]
+        doc_ref = db.collection('users').document(user_id).collection('finalized_test_cases').document()
+        doc_ref.set(request.dict())
+        log_audit_event({
+            "user_id": user_id,
+            "event_type": "create_finalized_cases",
+            "timestamp": datetime.now().isoformat(),
+            "document_id": doc_ref.id,
+            "product_name": request.product_name
+        })
+        return {"id": doc_ref.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/finalized-cases", response_model=List[FinalizedCasesDoc], tags=["Test Cases"], summary="Get All Finalized Cases",
+    description="Retrieves all finalized test case documents for the authenticated user.")
 async def get_finalized_cases(user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
     try:
         docs_ref = db.collection('users').document(user['uid']).collection('finalized_cases').stream()
@@ -16,66 +36,68 @@ async def get_finalized_cases(user: Dict[str, Any] = Depends(get_current_user), 
         for doc in docs_ref:
             doc_data = doc.to_dict()
             doc_data['id'] = doc.id
-            cases.append(FinalizedCasesDoc.model_validate(doc_data))
+            cases.append(FinalizedCasesDoc(**doc_data))
         return cases
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/api/finalized-cases", response_model=PostResponse, status_code=status.HTTP_201_CREATED, tags=["Finalized Cases"], summary="Create a New Finalized Document",
-    description="Saves a new collection of generated test cases as a finalized document.")
-async def create_finalized_cases(payload: CreateFinalizedCasesRequest, user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
+@router.put("/api/finalized-cases/{doc_id}", status_code=status.HTTP_200_OK, tags=["Test Cases"], summary="Update a Finalized Document",
+    description="Updates an entire finalized test case document.")
+async def update_finalized_cases(doc_id: str, request: CreateFinalizedCasesRequest, user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
     try:
-        _, doc_ref = db.collection('users').document(user['uid']).collection('finalized_cases').add(payload.model_dump())
-        return PostResponse(id=doc_ref.id)
+        user_id = user["uid"]
+        doc_ref = db.collection('users').document(user_id).collection('finalized_test_cases').document(doc_id)
+        doc_ref.set(request.dict(), merge=True)
+        log_audit_event({
+            "user_id": user_id,
+            "event_type": "update_finalized_cases",
+            "timestamp": datetime.now().isoformat(),
+            "document_id": doc_id
+        })
+        return {"id": doc_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/api/finalized-cases/{doc_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Finalized Cases"], summary="Update a Finalized Document",
-    description="Updates an existing finalized test case document. Used for actions like deleting a single test case from a document.")
-async def update_finalized_cases(doc_id: str, payload: CreateFinalizedCasesRequest, user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
-    try:
-        db.collection('users').document(user['uid']).collection('finalized_cases').document(doc_id).set(payload.model_dump())
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.delete("/api/finalized-cases/{doc_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Finalized Cases"], summary="Delete a Finalized Document",
-    description="Deletes an entire finalized test case document and all its contents.")
-async def delete_finalized_cases(doc_id: str, user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
-    try:
-        db.collection('users').document(user['uid']).collection('finalized_cases').document(doc_id).delete()
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.delete("/api/test-cases/{doc_id}/{case_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Finalized Cases"], summary="Delete a Single Test Case",
-    description="Deletes a single test case from within a finalized document.")
+@router.delete("/api/test-cases/{doc_id}/{case_id}", tags=["Test Cases"], summary="Delete a Test Case",
+    description="Deletes a specific test case from a finalized document for the authenticated user.")
 async def delete_test_case(doc_id: str, case_id: str, user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
     try:
-        doc_ref = db.collection('users').document(user['uid']).collection('finalized_cases').document(doc_id)
+        user_id = user["uid"]
+        doc_ref = db.collection("users").document(user_id).collection("finalized_test_cases").document(doc_id)
         doc = doc_ref.get()
 
         if not doc.exists:
             raise HTTPException(status_code=404, detail="Document not found")
 
         doc_data = doc.to_dict()
-        
-        # Filter out the test case
-        new_domains = []
-        for domain_group in doc_data.get("domains", []):
-            filtered_test_cases = [tc for tc in domain_group.get("test_cases", []) if tc.get("test_case_id") != case_id]
-            if filtered_test_cases: # Only keep domain if it has test cases
-                new_domains.append({
-                    "domain": domain_group.get("domain"),
-                    "test_cases": filtered_test_cases
-                })
+        updated_domains = []
+        case_found = False
 
-        # If all domains are empty, delete the document
-        if not new_domains:
+        for domain_group in doc_data.get("domains", []):
+            updated_test_cases = [tc for tc in domain_group.get("test_cases", []) if tc.get("test_case_id") != case_id]
+            if len(updated_test_cases) < len(domain_group.get("test_cases", [])):
+                case_found = True
+            if updated_test_cases:
+                updated_domains.append({"domain": domain_group["domain"], "test_cases": updated_test_cases})
+
+        if not case_found:
+            raise HTTPException(status_code=404, detail="Test case not found in document")
+
+        if not updated_domains:
+            # If no domains left, delete the entire document
             doc_ref.delete()
         else:
-            doc_ref.update({"domains": new_domains})
-            
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+            doc_ref.update({"domains": updated_domains})
+
+        log_audit_event({
+            "user_id": user_id,
+            "event_type": "delete_test_case",
+            "timestamp": datetime.now().isoformat(),
+            "document_id": doc_id,
+            "test_case_id": case_id
+        })
+        return {"message": "Test case deleted successfully"}
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

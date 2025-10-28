@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
-import { LogoIcon, TestCaseIcon, SettingsIcon, SunIcon, MoonIcon, FolderIcon, DesktopIcon, DatabaseIcon } from './icons';
+import { LogoIcon, TestCaseIcon, SettingsIcon, SunIcon, MoonIcon, FolderIcon, DesktopIcon, DatabaseIcon, ChartBarIcon, UsersIcon } from './icons';
 
-const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, selectedProduct, setSelectedProduct, isLoadingCases, currentPage, setCurrentPage }) => {
+const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, selectedProduct, setSelectedProduct, isLoadingCases, currentPage, setCurrentPage, isAdmin }) => {
     const { theme, toggleTheme } = useTheme();
     const [isHovering, setHovering] = useState(false);
     const isExpanded = isPinned || isHovering;
@@ -127,6 +127,12 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
                 </ProductsNavLink>
 
                 <NavLink icon={<DatabaseIcon />} onClick={() => setCurrentPage('knowledgebase')} isActive={currentPage === 'knowledgebase'}>Knowledge Base</NavLink>
+
+                <NavLink icon={<ChartBarIcon />} onClick={() => setCurrentPage('reporting')} isActive={currentPage === 'reporting'}>Reporting</NavLink>
+
+                {isAdmin && (
+                    <NavLink icon={<UsersIcon />} onClick={() => setCurrentPage('admin')} isActive={currentPage === 'admin'}>Admin Panel</NavLink>
+                )}
 
                 <NavLink icon={<SettingsIcon />}>Settings</NavLink>
             </ul>

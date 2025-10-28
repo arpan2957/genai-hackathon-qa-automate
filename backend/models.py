@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Union, Optional
+from typing import List, Dict, Any, Union, Optional, Literal
 from datetime import datetime
 
 class TestCase(BaseModel):
@@ -69,6 +69,9 @@ class KnowledgeBaseDocument(BaseModel):
     id: str
     filename: str
     upload_date: datetime
+    image_url: Optional[str] = None
+    image_embedding: Optional[List[float]] = None
+    document_type: Literal['text', 'image', 'multimodal'] = 'text'
 
 class PostResponse(BaseModel):
     id: str
@@ -85,3 +88,9 @@ class FineTuningResponse(BaseModel):
 class WebhookRegistration(BaseModel):
     url: str
     events: List[str] = ["test_case_generated"]
+
+class UserProfile(BaseModel):
+    uid: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    created_at: Optional[int] = None

@@ -1,84 +1,94 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from typing import Dict, Any, List
-from datetime import datetime
-from fpdf import FPDF
-import io
+from google.cloud import bigquery
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
 
 from security import get_current_user
-from database import db
-from models import TestCase, DomainGroup, GenerateResponse
+from database import get_bq_client
+from config import PROJECT_ID, BIGQUERY_DATASET, AUDIT_TABLE
 
 router = APIRouter()
 
-class PDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, 'Compliance Report', 0, 1, 'C')
-        self.ln(10)
-
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
-
-    def chapter_title(self, title):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, title, 0, 1, 'L')
-        self.ln(5)
-
-    def chapter_body(self, body):
-        self.set_font('Arial', '', 10)
-        self.multi_cell(0, 5, body)
-        self.ln()
-
-@router.post("/api/reports/compliance", tags=["Reporting"], summary="Generate Compliance Report",
-    description="Generates a compliance report in PDF format based on finalized test cases.")
-async def generate_compliance_report(user: Dict[str, Any] = Depends(get_current_user)):
+@router.get("/api/reports/audit-logs", tags=["Reporting"], summary="Get Audit Logs",
+    description="Retrieves audit logs from BigQuery with optional filters.")
+async def get_audit_logs(
+    user: Dict[str, Any] = Depends(get_current_user),
+    bq_client: bigquery.Client = Depends(get_bq_client),
+    event_type: Optional[str] = Query(None, description="Filter by event type (e.g., 'user_login', 'create_finalized_cases')"),
+    start_date: Optional[datetime] = Query(None, description="Start date for filtering logs (e.g., '2023-01-01T00:00:00')"),
+    end_date: Optional[datetime] = Query(None, description="End date for filtering logs (e.g., '2023-01-31T23:59:59')"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of logs to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination")
+):
     try:
-        user_id = user['uid']
-        docs_ref = db.collection('users').document(user_id).collection('finalized_test_cases')
-        docs = docs_ref.stream()
+        user_id = user["uid"]
+        table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
 
-        pdf = PDF()
-        pdf.alias_nb_pages()
-        pdf.add_page()
+        query_parts = [f"SELECT * FROM `{table_id}` WHERE user_id = @user_id"]
+        query_params = [
+            bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
+        ]
 
-        for doc in docs:
-            doc_data = doc.to_dict()
-            product_name = doc_data.get('product_name', 'N/A')
-            requirement = doc_data.get('requirement', 'N/A')
-            domains = doc_data.get('domains', [])
+        if event_type:
+            query_parts.append("AND event_type = @event_type")
+            query_params.append(bigquery.ScalarQueryParameter("event_type", "STRING", event_type))
+        
+        if start_date:
+            query_parts.append("AND timestamp >= @start_date")
+            query_params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_date))
+        
+        if end_date:
+            query_parts.append("AND timestamp <= @end_date")
+            query_params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_date))
+        
+        query_parts.append("ORDER BY timestamp DESC")
+        query_parts.append(f"LIMIT {limit} OFFSET {offset}")
 
-            pdf.chapter_title(f"Product: {product_name}")
-            pdf.chapter_body(f"Requirement: {requirement}")
+        query_job = bq_client.query(" ".join(query_parts), job_config=bigquery.QueryJobConfig(query_parameters=query_params))
+        
+        results = []
+        for row in query_job:
+            results.append(dict(row))
+        
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-            for domain_group in domains:
-                domain_name = domain_group.get('domain', 'N/A')
-                test_cases = domain_group.get('test_cases', [])
+@router.get("/api/reports/summary", tags=["Reporting"], summary="Get Audit Summary",
+    description="Provides a summary of audit events for the authenticated user.")
+async def get_audit_summary(
+    user: Dict[str, Any] = Depends(get_current_user),
+    bq_client: bigquery.Client = Depends(get_bq_client),
+    start_date: Optional[datetime] = Query(None, description="Start date for filtering logs (e.g., '2023-01-01T00:00:00')"),
+    end_date: Optional[datetime] = Query(None, description="End date for filtering logs (e.g., '2023-01-31T23:59:59')")
+):
+    try:
+        user_id = user["uid"]
+        table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
 
-                pdf.chapter_title(f"  Domain: {domain_name}")
-                for tc_data in test_cases:
-                    test_case = TestCase(**tc_data)
-                    pdf.chapter_body(f"    Test Case ID: {test_case.test_case_id}")
-                    pdf.chapter_body(f"    Title: {test_case.title}")
-                    pdf.chapter_body(f"    Type: {test_case.type}")
-                    pdf.chapter_body(f"    Priority: {test_case.priority}")
-                    pdf.chapter_body(f"    Compliance Tag: {test_case.compliance_tag}")
-                    pdf.chapter_body(f"    Traceability ID: {test_case.traceability_id}")
-                    pdf.chapter_body(f"    Steps: {test_case.steps}")
-                    pdf.ln(5)
+        query_parts = [
+            f"SELECT event_type, COUNT(*) as count FROM `{table_id}` WHERE user_id = @user_id"
+        ]
+        query_params = [
+            bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
+        ]
 
-        pdf_output = pdf.output(dest='S').encode('latin-1')
+        if start_date:
+            query_parts.append("AND timestamp >= @start_date")
+            query_params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_date))
+        
+        if end_date:
+            query_parts.append("AND timestamp <= @end_date")
+            query_params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_date))
+        
+        query_parts.append("GROUP BY event_type ORDER BY count DESC")
 
-        return StreamingResponse(io.BytesIO(pdf_output),
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": "attachment; filename=\"compliance_report.pdf\""
-            }
-        )
-
-    except HTTPException as e:
-        raise e
+        query_job = bq_client.query(" ".join(query_parts), job_config=bigquery.QueryJobConfig(query_parameters=query_params))
+        
+        summary = []
+        for row in query_job:
+            summary.append(dict(row))
+        
+        return summary
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

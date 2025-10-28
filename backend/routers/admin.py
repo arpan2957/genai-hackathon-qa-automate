@@ -13,6 +13,8 @@ from firebase_admin import auth
 
 router = APIRouter()
 
+MIN_FEEDBACK_THRESHOLD = 100
+
 def run_finetuning_pipeline(gcs_uri: str) -> aiplatform.PipelineJob:
     # The display name for the pipeline job
     display_name = f"tune-text-model-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -44,12 +46,23 @@ def run_finetuning_pipeline(gcs_uri: str) -> aiplatform.PipelineJob:
 
 @router.post("/api/admin/trigger-finetuning", response_model=FineTuningResponse, tags=["Admin"], summary="Trigger a Model Fine-Tuning Job",
     description="Starts a new fine-tuning job on Vertex AI using the collected feedback data.")
-async def trigger_finetuning(is_admin: bool = Depends(is_admin)):
+async def trigger_finetuning(force: bool = False, is_admin: bool = Depends(is_admin)):
     try:
-        # 1. Query Firestore for feedback data
-        feedback_docs = db.collection('finetuning_data').stream()
+        # 1. Check for currently active pipelines to prevent concurrent runs
+        active_pipelines = aiplatform.PipelineJob.list(
+            filter='state="PIPELINE_STATE_RUNNING" AND display_name~"tune-text-model-"'
+        )
+        if active_pipelines:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A fine-tuning pipeline is already in progress. Please wait for it to complete before starting a new one."
+            )
 
-        # 2. Format the data
+        # 2. Query Firestore for new feedback data that hasn't been processed
+        feedback_docs_query = db.collection('finetuning_data').where('processed_for_tuning', '!=', True)
+        feedback_docs = list(feedback_docs_query.stream())
+
+        # 3. Format the data
         training_data = []
         for doc in feedback_docs:
             data = doc.to_dict()
@@ -60,14 +73,21 @@ async def trigger_finetuning(is_admin: bool = Depends(is_admin)):
                 }
                 training_data.append(training_example)
         
+        # 4. Check if there is enough new data, unless forced
         if not training_data:
             return FineTuningResponse(
                 job_id="",
-                status="NO_DATA",
-                message="No valid feedback data found to start a fine-tuning job."
+                status="NO_NEW_DATA",
+                message="No new, unprocessed feedback data found to start a fine-tuning job."
             )
 
-        # 3. Upload the data to Google Cloud Storage
+        if len(training_data) < MIN_FEEDBACK_THRESHOLD and not force:
+            raise HTTPException(
+                status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                detail=f"Only {len(training_data)} new feedback examples found. A minimum of {MIN_FEEDBACK_THRESHOLD} is recommended. To proceed anyway, you can force the job."
+            )
+
+        # 5. Upload the data to Google Cloud Storage
         GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
         if not GCS_BUCKET_NAME:
             raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME environment variable is not set.")
@@ -83,15 +103,24 @@ async def trigger_finetuning(is_admin: bool = Depends(is_admin)):
         gcs_uri = f"gs://{GCS_BUCKET_NAME}/{blob_name}"
         print(f"Training data uploaded to {gcs_uri}")
 
-        # 4. Create and run a fine-tuning job on Vertex AI
+        # 6. Create and run a fine-tuning job on Vertex AI
         job = run_finetuning_pipeline(gcs_uri=gcs_uri)
+
+        # 7. Mark the feedback documents as processed in a batch write
+        batch = db.batch()
+        for doc in feedback_docs:
+            batch.update(doc.reference, {'processed_for_tuning': True})
+        batch.commit()
+        print(f"Marked {len(feedback_docs)} documents as processed.")
 
         return FineTuningResponse(
             job_id=job.resource_name,
             status=str(job.state),
-            message=f"Fine-tuning job has been successfully triggered with {len(training_data)} examples. Data uploaded to {gcs_uri}."
+            message=f"Fine-tuning job has been successfully triggered with {len(training_data)} new examples. Data uploaded to {gcs_uri}."
         )
 
+    except HTTPException as http_exc:
+        raise http_exc # Re-raise HTTPException to keep status code and detail
     except Exception as e:
         import traceback
         traceback.print_exc()

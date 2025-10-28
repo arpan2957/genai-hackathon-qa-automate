@@ -18,7 +18,6 @@ import ReportingPage from './ReportingPage';
 import AdminPage from './AdminPage';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
-const ADMIN_EMAIL = process.env.REACT_APP_ADMIN_EMAIL || 'http://127.0.0.1:8000'; // Assuming admin email is set in .env
 
 // GEMINI_TEST_COMMENT
 const AppPage = () => {
@@ -33,6 +32,7 @@ const AppPage = () => {
     const [searchQuery, setSearchQuery] = useState("");
     const [openDomains, setOpenDomains] = useState(new Set());
     const [isConfirmModalOpen, setConfirmModalOpen] = useState(false);
+    const [confirmModalProps, setConfirmModalProps] = useState({});
     const [itemToDelete, setItemToDelete] = useState(null);
     const [isLoadingCases, setIsLoadingCases] = useState(true); // New loading state
     const [selectedProduct, setSelectedProduct] = useState(null);
@@ -71,41 +71,32 @@ const AppPage = () => {
 
     // --- Data Fetching and Persistence ---
     const fetchFinalizedCases = async () => {
-        console.log('fetchFinalizedCases called');
-        if (!auth.currentUser) {
-            console.log('No current user, returning');
-            return;
-        }
-        setIsLoadingCases(true); // Set loading to true
+        if (!auth.currentUser) return;
+        setIsLoadingCases(true);
         try {
-            console.log('Fetching finalized cases for user:', auth.currentUser.uid);
             const token = await auth.currentUser.getIdToken();
-            console.log('Got auth token:', token);
             const response = await fetch(`${BACKEND_URL}/api/finalized-cases`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
-            console.log('Got response from backend:', response);
             if (!response.ok) {
-                console.error('Failed to fetch test cases, response not ok', response);
                 throw new Error('Failed to fetch test cases.');
             }
             const data = await response.json();
-            console.log('Got data from backend:', data);
             setFinalizedDocs(data);
         } catch (error) {
-            console.error('Error in fetchFinalizedCases:', error);
             toast.error(`Error fetching data: ${error.message}`);
         } finally {
-            setIsLoadingCases(false); // Set loading to false after fetch
+            setIsLoadingCases(false);
         }
     };
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
             if (currentUser) {
+                const idTokenResult = await currentUser.getIdTokenResult();
+                setIsAdmin(idTokenResult.claims.admin === true);
                 setLoginModalOpen(false);
-                setIsAdmin(currentUser.email === ADMIN_EMAIL);
                 fetchFinalizedCases();
             } else {
                 setLoginModalOpen(true);
@@ -121,6 +112,37 @@ const AppPage = () => {
     }, [selectedProduct, finalizedDocs]);
 
     // --- Event Handlers ---
+    const handleFineTune = async ({ force = false } = {}) => {
+        if (!auth.currentUser) return;
+        const toastId = toast.loading('Initiating fine-tuning job...');
+
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const response = await fetch(`${BACKEND_URL}/api/admin/trigger-finetuning?force=${force}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                toast.success(data.message, { id: toastId });
+            } else if (response.status === 428) { // Precondition Required
+                toast.dismiss(toastId);
+                setConfirmModalProps({
+                    title: "Confirm Fine-Tuning",
+                    message: `${data.detail} Do you want to proceed anyway?`,
+                    onConfirm: () => handleFineTune({ force: true }),
+                });
+                setConfirmModalOpen(true);
+            } else {
+                throw new Error(data.detail || "An unknown error occurred.");
+            }
+        } catch (error) {
+            toast.error(`Error: ${error.message}`, { id: toastId });
+        }
+    };
+
     const handleFinalize = async (generatedResult) => {
         if (!auth.currentUser) return;
         try {
@@ -226,6 +248,11 @@ const AppPage = () => {
 
     const handleDeleteTestCase = (caseId, docId) => {
         setItemToDelete({ caseId, docId });
+        setConfirmModalProps({
+            title: "Delete Test Case",
+            message: "Are you sure you want to delete this test case? This action cannot be undone.",
+            onConfirm: executeDelete,
+        });
         setConfirmModalOpen(true);
     };
 
@@ -390,7 +417,7 @@ const AppPage = () => {
 
     return (
         <div className={`flex h-screen bg-gray-100 dark:bg-gray-900`}>
-            <Sidebar isMobileOpen={isMobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} isPinned={isSidebarPinned} uniqueProducts={uniqueProducts} selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} isLoadingCases={isLoadingCases} currentPage={currentPage} setCurrentPage={setCurrentPage} />
+            <Sidebar isMobileOpen={isMobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} isPinned={isSidebarPinned} uniqueProducts={uniqueProducts} selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} isLoadingCases={isLoadingCases} currentPage={currentPage} setCurrentPage={setCurrentPage} isAdmin={isAdmin} handleFineTune={handleFineTune} />
             <div className={`flex-1 flex flex-col transition-all duration-300`}>
                 <Header setMobileSidebarOpen={setMobileSidebarOpen} setSidebarPinned={setSidebarPinned} isSidebarPinned={isSidebarPinned} setAiModalOpen={setAiModalOpen} setCreateModalOpen={setCreateModalOpen} user={user} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
                 <main className="flex-1 p-6 overflow-y-auto">
@@ -469,9 +496,7 @@ const AppPage = () => {
             {isConfirmModalOpen && <ConfirmationModal
                 isOpen={isConfirmModalOpen}
                 onClose={() => setConfirmModalOpen(false)}
-                onConfirm={executeDelete}
-                title="Delete Test Case"
-                message="Are you sure you want to delete this test case? This action cannot be undone."
+                {...confirmModalProps}
             />}
             <LoginModal isOpen={isLoginModalOpen} />
         </div>

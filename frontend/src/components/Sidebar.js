@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
-import { LogoIcon, TestCaseIcon, SettingsIcon, SunIcon, MoonIcon, FolderIcon, DesktopIcon, DatabaseIcon, ChartBarIcon, UsersIcon } from './icons';
+import { LogoIcon, TestCaseIcon, SettingsIcon, SunIcon, MoonIcon, FolderIcon, DesktopIcon, DatabaseIcon, ChartBarIcon, UsersIcon, SparklesIcon } from './icons';
 
-const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, selectedProduct, setSelectedProduct, isLoadingCases, currentPage, setCurrentPage, isAdmin }) => {
+const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, selectedProduct, setSelectedProduct, isLoadingCases, currentPage, setCurrentPage, isAdmin, handleFineTune }) => {
     const { theme, toggleTheme } = useTheme();
     const [isHovering, setHovering] = useState(false);
     const isExpanded = isPinned || isHovering;
@@ -11,7 +11,7 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
     const iconSize = isExpanded ? '28px' : '20px';
 
     const ExpandingText = ({ children }) => (
-        <span className={`ml-2 whitespace-nowrap overflow-hidden transition-all duration-200 ${isExpanded ? 'max-w-36 opacity-100' : 'max-w-0 opacity-0'}`}>
+        <span className={`ml-2 whitespace-normal transition-all duration-200 ${isExpanded ? 'max-w-36 opacity-100' : 'max-w-0 opacity-0'}`}>
             {children}
         </span>
     );
@@ -131,7 +131,11 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
                 <NavLink icon={<ChartBarIcon />} onClick={() => setCurrentPage('reporting')} isActive={currentPage === 'reporting'}>Reporting</NavLink>
 
                 {isAdmin && (
-                    <NavLink icon={<UsersIcon />} onClick={() => setCurrentPage('admin')} isActive={currentPage === 'admin'}>Admin Panel</NavLink>
+                    <>
+                        <div className="px-3 py-2 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase">Admin</div>
+                        <NavLink icon={<UsersIcon />} onClick={() => setCurrentPage('admin')} isActive={currentPage === 'admin'}>User Management</NavLink>
+                        <NavLink icon={<SparklesIcon />} onClick={handleFineTune}>Fine-Tune Model</NavLink>
+                    </>
                 )}
 
                 <NavLink icon={<SettingsIcon />}>Settings</NavLink>

@@ -125,7 +125,7 @@ const ReportingPage = () => {
                         id="eventType"
                         value={filters.eventType}
                         onChange={handleFilterChange}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                         placeholder="e.g., user_login"
                     />
                 </div>
@@ -137,7 +137,7 @@ const ReportingPage = () => {
                         id="startDate"
                         value={filters.startDate}
                         onChange={handleFilterChange}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                     />
                 </div>
                 <div>
@@ -148,7 +148,7 @@ const ReportingPage = () => {
                         id="endDate"
                         value={filters.endDate}
                         onChange={handleFilterChange}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white px-3 py-2 text-sm"
                     />
                 </div>
             </div>

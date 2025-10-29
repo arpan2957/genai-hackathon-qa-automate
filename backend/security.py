@@ -20,12 +20,12 @@ async def get_user_from_request(request: Request) -> Dict[str, Any]:
     except Exception as e:
         return None
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
+async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     print(f"Received token: {token[:30]}...") # Print first 30 chars of token
     try:
         decoded_token = auth.verify_id_token(token)
         print(f"Token successfully decoded for user: {decoded_token.get('email')}")
-        log_audit_event(Request, decoded_token, "user_login", details={})
+        log_audit_event(request, decoded_token, "user_login", details={})
         return decoded_token
     except Exception as e:
         print(f"Error verifying token: {e}")

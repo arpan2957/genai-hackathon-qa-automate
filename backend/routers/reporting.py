@@ -1,5 +1,5 @@
 from google.cloud import bigquery
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
@@ -12,6 +12,7 @@ router = APIRouter()
 @router.get("/api/reports/audit-logs", tags=["Reporting"], summary="Get Audit Logs",
     description="Retrieves audit logs from BigQuery with optional filters.")
 async def get_audit_logs(
+    request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
     bq_client: bigquery.Client = Depends(get_bq_client),
     event_type: Optional[str] = Query(None, description="Filter by event type (e.g., 'user_login', 'create_finalized_cases')"),
@@ -57,6 +58,7 @@ async def get_audit_logs(
 @router.get("/api/reports/summary", tags=["Reporting"], summary="Get Audit Summary",
     description="Provides a summary of audit events for the authenticated user.")
 async def get_audit_summary(
+    request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
     bq_client: bigquery.Client = Depends(get_bq_client),
     start_date: Optional[datetime] = Query(None, description="Start date for filtering logs (e.g., '2023-01-01T00:00:00')"),

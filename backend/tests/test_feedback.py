@@ -12,7 +12,9 @@ def mock_db():
     return MagicMock()
 
 
-async def override_get_current_user():
+from fastapi import Request
+
+async def override_get_current_user(request: Request):
     return {"uid": "test_user_uid"}
 
 

@@ -42,7 +42,7 @@ const TestCaseTable = ({
         const token = await getAuthToken();
 
         const payload = {
-            requirement: requirement,
+            requirement: requirement || testCase.title,
             original_test_case: testCase,
             rating: 'bad',
             corrected_test_case: correction ? { ...testCase, steps: correction } : null

@@ -1,4 +1,5 @@
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock
 
@@ -12,7 +13,7 @@ def mock_db():
     return MagicMock()
 
 
-async def override_get_current_user():
+async def override_get_current_user(request: Request):
     return {"uid": "test_user_uid"}
 
 

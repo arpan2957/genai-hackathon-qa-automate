@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, UploadFile, Response, status, HTTPException, Form
+from fastapi import APIRouter, Depends, File, UploadFile, Response, status, HTTPException, Form, Request
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import io
@@ -20,6 +20,7 @@ router = APIRouter()
 @router.post("/api/knowledge-base/documents", response_model=PostResponse, status_code=status.HTTP_201_CREATED, tags=["Knowledge Base"], summary="Upload a New Knowledge Base Document",
     description="Uploads a new document (text or image) to the user's knowledge base.")
 async def create_knowledge_base_document(
+    request: Request,
     file: Optional[UploadFile] = File(None),
     image_file: Optional[UploadFile] = File(None),
     user: Dict[str, Any] = Depends(get_current_user)
@@ -135,20 +136,22 @@ async def create_knowledge_base_document(
     if errors:
         raise HTTPException(status_code=500, detail=f"Error inserting rows into BigQuery: {errors}")
 
-    log_audit_event({
-        "user_id": user["uid"],
-        "event_type": "upload_knowledge_base_document",
-        "timestamp": datetime.now().isoformat(),
-        "document_id": doc_ref.id,
-        "filename": filename,
-        "document_type": document_type
-    })
+    log_audit_event(
+        request,
+        user,
+        "upload_knowledge_base_document",
+        details={
+            "document_id": doc_ref.id,
+            "filename": filename,
+            "document_type": document_type
+        }
+    )
 
     return PostResponse(id=doc_ref.id)
 
 @router.get("/api/knowledge-base/documents", response_model=List[KnowledgeBaseDocument], tags=["Knowledge Base"], summary="Get All Knowledge Base Documents",
     description="Retrieves a list of all documents in the user's knowledge base.")
-async def get_knowledge_base_documents(user: Dict[str, Any] = Depends(get_current_user)):
+async def get_knowledge_base_documents(request: Request, user: Dict[str, Any] = Depends(get_current_user)):
     try:
         docs_ref = db.collection('users').document(user['uid']).collection('knowledge_base').stream()
         documents = []
@@ -162,7 +165,7 @@ async def get_knowledge_base_documents(user: Dict[str, Any] = Depends(get_curren
 
 @router.delete("/api/knowledge-base/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Knowledge Base"], summary="Delete a Knowledge Base Document",
     description="Deletes a document from the user's knowledge base.")
-async def delete_knowledge_base_document(document_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+async def delete_knowledge_base_document(document_id: str, request: Request, user: Dict[str, Any] = Depends(get_current_user)):
     try:
         # Get document data to check for image_url
         doc_ref = db.collection('users').document(user['uid']).collection('knowledge_base').document(document_id)
@@ -188,12 +191,14 @@ async def delete_knowledge_base_document(document_id: str, user: Dict[str, Any] 
                 blob.delete()
                 print(f"Deleted image {gcs_path} from GCS.")
 
-        log_audit_event({
-            "user_id": user["uid"],
-            "event_type": "delete_knowledge_base_document",
-            "timestamp": datetime.now().isoformat(),
-            "document_id": document_id
-        })
+        log_audit_event(
+            request,
+            user,
+            "delete_knowledge_base_document",
+            details={
+                "document_id": document_id
+            }
+        )
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as e:

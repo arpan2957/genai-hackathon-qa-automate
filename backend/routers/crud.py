@@ -27,7 +27,7 @@ async def create_finalized_cases(req: Request, request_body: CreateFinalizedCase
 
 @router.get("/api/finalized-cases", response_model=List[FinalizedCasesDoc], tags=["Test Cases"], summary="Get All Finalized Cases",
     description="Retrieves all finalized test case documents for the authenticated user.")
-async def get_finalized_cases(user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
+async def get_finalized_cases(request: Request, user: Dict[str, Any] = Depends(get_current_user), db = Depends(get_db)):
     try:
         docs_ref = db.collection('users').document(user['uid']).collection('finalized_cases').stream()
         cases = []

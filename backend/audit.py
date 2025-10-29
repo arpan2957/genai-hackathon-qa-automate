@@ -35,6 +35,12 @@ from config import PROJECT_ID, BIGQUERY_DATASET, GDPR_COMPLIANT, GDPR_SECRET_KEY
 #   image_embedding ARRAY<FLOAT> # Image embedding
 # );
 
+ALLOWED_FIELDS = [
+    "user_id", "email", "event_type", "timestamp",
+    "document_id", "test_case_id", "filename", "integration_name",
+    "issue_key", "rating"
+]
+
 def _anonymize_data(data: str, secret_key: str) -> str:
     """
     Generates a consistent, anonymized hash for a given data string.
@@ -78,8 +84,10 @@ def log_audit_event(request: Request, user: dict, event_type: str, details: dict
             if 'user_id' in event_data and event_data['user_id']:
                 event_data['user_id'] = _anonymize_data(event_data['user_id'], GDPR_SECRET_KEY)
 
-        print(f"Logging to BigQuery: {event_data}")
-        errors = client.insert_rows_json(table_id, [event_data])
+        filtered_event_data = {k: v for k, v in event_data.items() if k in ALLOWED_FIELDS}
+
+        print(f"Logging to BigQuery: {filtered_event_data}")
+        errors = client.insert_rows_json(table_id, [filtered_event_data])
         if errors:
             print(f"Encountered errors while inserting rows: {errors}")
     except Exception as e:

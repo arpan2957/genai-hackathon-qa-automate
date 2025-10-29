@@ -8,8 +8,10 @@ from docx import Document
 from main import app
 from security import get_current_user
 
+from fastapi import Request
+
 # Override user dependency for all tests in this file
-async def override_get_current_user():
+async def override_get_current_user(request: Request):
     return {"uid": "test_user_uid"}
 
 @pytest.fixture

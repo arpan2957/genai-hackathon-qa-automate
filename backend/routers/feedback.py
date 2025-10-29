@@ -13,7 +13,7 @@ router = APIRouter()
     description="Submits feedback on the quality of a generated test case, which will be used for future model fine-tuning.")
 async def submit_feedback(request_body: FeedbackRequest, req: Request, user: Dict[str, Any] = Depends(get_current_user), db=Depends(get_db)):
     try:
-        feedback_data = request_body.dict()
+        feedback_data = request_body.model_dump()
         feedback_data['user_id'] = user['uid']
         feedback_data['timestamp'] = datetime.now()
         db.collection('finetuning_data').add(feedback_data)

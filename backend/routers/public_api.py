@@ -82,7 +82,7 @@ async def public_generate_test_cases(request: RequirementRequest, api_key: str =
                 final_domains.append(DomainGroup(domain="General", test_cases=unclassified_test_cases))
 
         response = GenerateResponse(product_name=classified_data.get("product_name", product_name), domains=final_domains)
-        await trigger_webhooks("test_case_generated", response.dict())
+        await trigger_webhooks("test_case_generated", response.model_dump())
         return response
 
     except HTTPException as e:
@@ -97,7 +97,7 @@ async def register_webhook(registration: WebhookRegistration, api_key: str = Dep
         # In a real application, you might want to associate webhooks with a user/account
         # For this example, we'll store them globally
         doc_ref = db.collection("webhook_subscriptions").document()
-        doc_ref.set(registration.dict())
+        doc_ref.set(registration.model_dump())
         return {"id": doc_ref.id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

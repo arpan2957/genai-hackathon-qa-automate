@@ -92,6 +92,16 @@ def log_event(user_id: str, email: str, event_type: str, details: dict):
             print(f"Failed to log event to BigQuery: {e}")
 
 
+def create_bigquery_dataset_and_table():
+    """Create BigQuery dataset and table for testing purposes."""
+    global bq_client
+    if not bq_client:
+        bq_client = MagicMock()
+    
+    # For testing, we'll just use a mock client
+    # In real scenarios, this would create actual BigQuery resources
+    print("Mock BigQuery dataset and table created for testing.")
+
 def close_db_connection():
     # No explicit close needed for these clients
     pass

@@ -52,7 +52,7 @@ def test_trigger_finetuning_when_pipeline_is_running(mock_pipeline_list, client)
 
 
 @patch("routers.admin.aiplatform.PipelineJob.list")
-@patch("database.db")
+@patch("routers.admin.db")
 def test_trigger_finetuning_insufficient_data(mock_db, mock_pipeline_list, client, mock_feedback_docs):
     """Test that a 428 Precondition Required is returned if there are not enough new documents."""
     # Arrange
@@ -70,7 +70,7 @@ def test_trigger_finetuning_insufficient_data(mock_db, mock_pipeline_list, clien
 
 @patch("routers.admin.run_finetuning_pipeline")
 @patch("routers.admin.aiplatform.PipelineJob.list")
-@patch("database.db")
+@patch("routers.admin.db")
 @patch("routers.admin.storage_client")
 def test_trigger_finetuning_force_override(mock_storage_client, mock_db, mock_pipeline_list, mock_run_pipeline, client, mock_feedback_docs):
     """Test that using force=true bypasses the data threshold check."""
@@ -95,7 +95,7 @@ def test_trigger_finetuning_force_override(mock_storage_client, mock_db, mock_pi
 
 @patch("routers.admin.run_finetuning_pipeline")
 @patch("routers.admin.aiplatform.PipelineJob.list")
-@patch("database.db")
+@patch("routers.admin.db")
 @patch("routers.admin.storage_client")
 def test_trigger_finetuning_success_and_flags_data(mock_storage_client, mock_db, mock_pipeline_list, mock_run_pipeline, client, mock_feedback_docs):
     """Test a successful run and verify that feedback documents are flagged as processed."""

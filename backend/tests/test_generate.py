@@ -136,12 +136,42 @@ def test_generate_invalid_request(client):
 @patch("routers.generation.genai.GenerativeModel")
 @patch("routers.generation.Image.open")
 @patch("routers.generation.base64.b64decode", side_effect=base64.b64decode)
-def test_generate_multimodal_success(mock_b64decode, mock_image_open, mock_genai_model, client):
+@patch("routers.generation.TextEmbeddingModel.from_pretrained")
+@patch("routers.generation.MultiModalEmbeddingModel.from_pretrained")
+@patch("routers.generation.get_bq_client")
+def test_generate_multimodal_success(mock_get_bq_client, mock_multimodal_embedding, mock_embedding_model, mock_b64decode, mock_image_open, mock_genai_model, client, mock_agent):
     """Test successful generation from an image upload."""
     # Arrange
+    # Mock BigQuery client
+    mock_bq_client_instance = MagicMock()
+    mock_table = MagicMock()
+    mock_table.num_rows = 0  # Set to 0 to skip the knowledge base query
+    mock_bq_client_instance.get_table.return_value = mock_table
+    mock_bq_client_instance.query.return_value = []
+    mock_get_bq_client.return_value = mock_bq_client_instance
+    
+    # Mock the text embedding model
+    mock_embedding = MagicMock()
+    mock_embedding.values = [0.1] * 768
+    mock_embedding_instance = MagicMock()
+    mock_embedding_instance.get_embeddings.return_value = [mock_embedding]
+    mock_embedding_model.return_value = mock_embedding_instance
+    
+    # Mock the multimodal embedding model
+    mock_multimodal_embedding_instance = MagicMock()
+    mock_multimodal_embedding_result = MagicMock()
+    mock_multimodal_embedding_result.image_embedding = [0.1] * 768
+    mock_multimodal_embedding_instance.get_embeddings.return_value = mock_multimodal_embedding_result
+    mock_multimodal_embedding.return_value = mock_multimodal_embedding_instance
+    
+    # Mock the generative model
     mock_model_instance = MagicMock()
     mock_model_instance.generate_content.return_value.text = '[{"test_case_id": "TC-IMG-001", "title": "Image Test", "type": "Positive", "priority": "High", "steps": "Steps", "compliance_tag": "UI"}]'
     mock_genai_model.return_value = mock_model_instance
+    
+    # Mock the agent responses
+    mock_agent.classify_requirements.return_value = '{"product_name": "General Product", "domains": {"General": ["Generate test cases for this UI mockup."]}}'
+    mock_agent.generate_initial_test_cases.return_value = '[{"test_case_id": "TC-IMG-001", "title": "Image Test", "type": "Positive", "priority": "High", "steps": "Steps", "compliance_tag": "UI"}]'
 
     payload = {
         "requirement": "Generate test cases for this UI mockup.",
@@ -152,6 +182,9 @@ def test_generate_multimodal_success(mock_b64decode, mock_image_open, mock_genai
     response = client.post("/api/generate", json=payload)
 
     # Assert
+    if response.status_code != 200:
+        print(f"Response status: {response.status_code}")
+        print(f"Response body: {response.text}")
     assert response.status_code == 200
     response_json = response.json()
     assert len(response_json["domains"]) == 1

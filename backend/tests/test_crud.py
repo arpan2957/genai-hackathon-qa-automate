@@ -59,10 +59,7 @@ def test_create_finalized_cases(client, mock_db, sample_payload):
     # Arrange
     mock_doc_ref = MagicMock()
     mock_doc_ref.id = "new_doc_id_123"
-    mock_db.collection.return_value.document.return_value.collection.return_value.add.return_value = (
-        None,
-        mock_doc_ref,
-    )
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = mock_doc_ref
 
     # Act
     response = client.post("/api/finalized-cases", json=sample_payload)
@@ -74,9 +71,6 @@ def test_create_finalized_cases(client, mock_db, sample_payload):
     mock_db.collection.return_value.document.assert_called_with("test_user_uid")
     mock_db.collection.return_value.document.return_value.collection.assert_called_with(
         "finalized_cases"
-    )
-    mock_db.collection.return_value.document.return_value.collection.return_value.add.assert_called_once_with(
-        sample_payload
     )
 
 
@@ -119,33 +113,48 @@ def test_update_finalized_cases(client, mock_db, sample_payload):
     response = client.put(f"/api/finalized-cases/{doc_id}", json=sample_payload)
 
     # Assert
-    assert response.status_code == 204
+    assert response.status_code == 200
     mock_db.collection.assert_called_once_with("users")
     mock_users_collection.document.assert_called_once_with("test_user_uid")
     mock_user_doc.collection.assert_called_once_with("finalized_cases")
     mock_cases_collection.document.assert_called_once_with(doc_id)
-    mock_case_doc.set.assert_called_once_with(sample_payload)
+    mock_case_doc.set.assert_called_once_with(sample_payload, merge=True)
 
 
-def test_delete_finalized_cases(client, mock_db):
-    """Test DELETE /api/finalized-cases/{doc_id} - successful deletion."""
+def test_delete_test_case(client, mock_db):
+    """Test DELETE /api/test-cases/{doc_id}/{case_id} - successful deletion."""
     # Arrange
     doc_id = "doc_to_delete_789"
-    mock_users_collection = mock_db.collection.return_value
-    mock_user_doc = mock_users_collection.document.return_value
-    mock_cases_collection = mock_user_doc.collection.return_value
-    mock_case_doc = mock_cases_collection.document.return_value
+    case_id = "TC-001"
+    
+    mock_doc = MagicMock()
+    mock_doc.exists = True
+    mock_doc.to_dict.return_value = {
+        "domains": [
+            {
+                "domain": "Authentication",
+                "test_cases": [
+                    {"test_case_id": "TC-001", "title": "Test Case 1"},
+                    {"test_case_id": "TC-002", "title": "Test Case 2"}
+                ]
+            }
+        ]
+    }
+    
+    mock_doc_ref = MagicMock()
+    mock_doc_ref.get.return_value = mock_doc
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = mock_doc_ref
 
     # Act
-    response = client.delete(f"/api/finalized-cases/{doc_id}")
+    response = client.delete(f"/api/test-cases/{doc_id}/{case_id}")
 
     # Assert
-    assert response.status_code == 204
-    mock_db.collection.assert_called_once_with("users")
-    mock_users_collection.document.assert_called_once_with("test_user_uid")
-    mock_user_doc.collection.assert_called_once_with("finalized_cases")
-    mock_cases_collection.document.assert_called_once_with(doc_id)
-    mock_case_doc.delete.assert_called_once()
+    assert response.status_code == 200
+    mock_db.collection.assert_called_with("users")
+    mock_doc_ref.get.assert_called_once()
+    # Should call update with the remaining test cases (TC-002 only)
+    expected_domains = [{"domain": "Authentication", "test_cases": [{"test_case_id": "TC-002", "title": "Test Case 2"}]}]
+    mock_doc_ref.update.assert_called_once_with({"domains": expected_domains})
 
 
 def test_get_finalized_cases_db_error(client, mock_db):

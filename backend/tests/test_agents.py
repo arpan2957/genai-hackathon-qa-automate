@@ -57,8 +57,8 @@ def test_generate_initial_test_cases(mock_generative_model):
 
     # Assert
     mock_generative_model.generate_content.assert_called_once()
-    assert 'Requirement to test' in mock_generative_model.generate_content.call_args[0][0]
-    assert requirement in mock_generative_model.generate_content.call_args[0][0]
+    assert 'Requirement to test' in mock_generative_model.generate_content.call_args[0][0][0]
+    assert requirement in mock_generative_model.generate_content.call_args[0][0][0]
     assert result == '[{"id": 1}]'
 
 def test_refine_test_cases(mock_generative_model):
@@ -75,9 +75,9 @@ def test_refine_test_cases(mock_generative_model):
 
     # Assert
     mock_generative_model.generate_content.assert_called_once()
-    assert 'Original Requirement' in mock_generative_model.generate_content.call_args[0][0]
-    assert requirement in mock_generative_model.generate_content.call_args[0][0]
-    assert 'Existing Test Cases' in mock_generative_model.generate_content.call_args[0][0]
-    assert 'Refinement Prompt' in mock_generative_model.generate_content.call_args[0][0]
-    assert refinement_prompt in mock_generative_model.generate_content.call_args[0][0]
+    assert 'Original Requirement' in mock_generative_model.generate_content.call_args[0][0][0]
+    assert requirement in mock_generative_model.generate_content.call_args[0][0][0]
+    assert 'Existing Test Cases' in mock_generative_model.generate_content.call_args[0][0][0]
+    assert 'Refinement Prompt' in mock_generative_model.generate_content.call_args[0][0][0]
+    assert refinement_prompt in mock_generative_model.generate_content.call_args[0][0][0]
     assert result == '[{"id": 2}]'

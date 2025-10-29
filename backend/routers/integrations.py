@@ -13,7 +13,7 @@ router = APIRouter()
 async def create_issue(req: Request, integration_name: str, request_body: CreateIssueRequest, user: Dict[str, Any] = Depends(get_current_user)):
     try:
         integration = get_integration(integration_name)
-        issue_data = request_body.dict()
+        issue_data = request_body.model_dump()
         created_issue = integration.create_issue(issue_data)
         
         log_audit_event(req, user, "create_alm_issue", details={

@@ -143,7 +143,7 @@ async def generate_test_cases(req: Request, request: RequirementRequest, user: D
         if request.refinement_prompt and request.test_cases:
             # Refinement phase
             refined_test_cases_json = agent.refine_test_cases(
-                existing_test_cases=json.dumps([tc.dict() for tc in request.test_cases]),
+                existing_test_cases=json.dumps([tc.model_dump() for tc in request.test_cases]),
                 refinement_prompt=request.refinement_prompt,
                 context=context_text, # Pass text context
                 images=context_images # Pass image context
@@ -205,8 +205,8 @@ async def generate_test_cases(req: Request, request: RequirementRequest, user: D
             raise HTTPException(status_code=400, detail="Invalid request: No requirements or refinement prompt provided.")
 
         log_audit_event(req, user, "ai_generation", details={
-            "request_data": request.dict(),
-            "response_data": response.dict()
+            "request_data": request.model_dump(),
+            "response_data": response.model_dump()
         })
         return response
 

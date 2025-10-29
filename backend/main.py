@@ -2,16 +2,26 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from firebase_admin import credentials, initialize_app
 import os
+from contextlib import asynccontextmanager
 from database import close_db_connection, init_db
 from routers import generation, crud, feedback, integrations, upload, public_api, reporting, admin, knowledge_base
 # from routers import reporting
 # from routers import admin
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    init_db()
+    yield
+    # Shutdown
+    close_db_connection()
+
 # Initialize FastAPI app
 app = FastAPI(
     title="AI Test Case Generator",
     description="This API generates test cases from requirements using AI.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
     
 # CORS Middleware
@@ -26,14 +36,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("startup")
-async def startup_event():
-    init_db()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    close_db_connection()
 
 # Include routers
 app.include_router(generation.router)

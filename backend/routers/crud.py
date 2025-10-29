@@ -14,7 +14,7 @@ async def create_finalized_cases(req: Request, request_body: CreateFinalizedCase
     try:
         user_id = user["uid"]
         doc_ref = db.collection('users').document(user_id).collection('finalized_cases').document()
-        doc_ref.set(request_body.dict())
+        doc_ref.set(request_body.model_dump())
         
         log_audit_event(req, user, "create_finalized_cases", details={
             "document_id": doc_ref.id,
@@ -45,7 +45,7 @@ async def update_finalized_cases(req: Request, doc_id: str, request_body: Create
     try:
         user_id = user["uid"]
         doc_ref = db.collection('users').document(user_id).collection('finalized_cases').document(doc_id)
-        doc_ref.set(request_body.dict(), merge=True)
+        doc_ref.set(request_body.model_dump(), merge=True)
         
         log_audit_event(req, user, "update_finalized_cases", details={"document_id": doc_id})
         

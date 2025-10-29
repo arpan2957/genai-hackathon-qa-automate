@@ -20,3 +20,4 @@ google-cloud-storage==2.19.0
 google-cloud-aiplatform[language_models]==1.95.1
 google-cloud-bigquery==3.25.0
 Pillow==10.4.0
+bleach==6.1.0

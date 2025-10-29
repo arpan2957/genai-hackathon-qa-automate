@@ -12,6 +12,10 @@ from audit import log_audit_event
 from config import PROJECT_ID, BIGQUERY_DATASET, AUDIT_TABLE
 from google.cloud import aiplatform
 from firebase_admin import auth
+from validation import (
+    validate_admin_request, validate_filter_params, validate_user_id,
+    ValidationError, AdminFilterRequest
+)
 
 router = APIRouter()
 
@@ -122,12 +126,13 @@ async def trigger_finetuning(req: Request, force: bool = False, user: dict = Dep
             message=f"Fine-tuning job has been successfully triggered with {len(training_data)} new examples. Data uploaded to {gcs_uri}."
         )
 
-    except HTTPException as http_exc:
-        raise http_exc # Re-raise HTTPException to keep status code and detail
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the full error for debugging but don't expose to client
+        import logging
+        logging.error(f"Error in trigger_finetuning: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to trigger fine-tuning job")
 
 @router.get("/api/admin/users", response_model=List[UserProfile], tags=["Admin"], summary="List All Users",
     description="Retrieves a list of all registered users.")
@@ -145,20 +150,27 @@ async def list_users(req: Request, user: dict = Depends(is_admin)):
             ))
         return user_profiles
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the full error for debugging but don't expose to client
+        import logging
+        logging.error(f"Error in list_users: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve user list")
 
 @router.delete("/api/admin/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin"], summary="Delete User and All Associated Data",
     description="Deletes a user from Firebase Authentication and all their associated data in Firestore and BigQuery.")
 async def delete_user(req: Request, user_id: str, user: dict = Depends(is_admin)):
     try:
+        # Validate request and user_id
+        validate_admin_request(req)
+        validated_user_id = validate_user_id(user_id)
+        
         # Log the admin action first
-        log_audit_event(req, user, "delete_user", details={"deleted_user_id": user_id})
+        log_audit_event(req, user, "delete_user", details={"deleted_user_id": validated_user_id})
 
         # 1. Delete from Firebase Authentication
-        auth.delete_user(user_id)
+        auth.delete_user(validated_user_id)
 
         # 2. Delete user's data from Firestore
-        user_doc_ref = db.collection("users").document(user_id)
+        user_doc_ref = db.collection("users").document(validated_user_id)
         
         # Delete subcollections
         for subcollection in ["finalized_test_cases", "knowledge_base"]:
@@ -170,16 +182,21 @@ async def delete_user(req: Request, user_id: str, user: dict = Depends(is_admin)
         # 3. Delete user's data from BigQuery
         table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
         query = f"DELETE FROM `{table_id}` WHERE user_id = @user_id"
-        job_config = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)])
+        job_config = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", validated_user_id)])
         bq_client.query(query, job_config=job_config).result()
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except auth.UserNotFoundError:
         raise HTTPException(status_code=404, detail="User not found.")
+    except ValidationError as ve:
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(ve)}")
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the full error for debugging but don't expose to client
+        import logging
+        logging.error(f"Error in delete_user: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete user")
 
 @router.get("/api/admin/audit-logs", response_model=List[AuditLogEntry], tags=["Admin"], summary="Get Detailed Audit Logs",
     description="Retrieves detailed audit logs with filtering capabilities.")
@@ -192,23 +209,31 @@ async def get_audit_logs(
     end_date: Optional[datetime] = None
 ):
     try:
-        log_audit_event(req, user, "get_audit_logs", details={"filter_user_id": user_id, "filter_event_type": event_type, "filter_start_date": str(start_date), "filter_end_date": str(end_date)})
+        # Validate request and filter parameters
+        validate_admin_request(req)
+        validated_filters = validate_filter_params(
+            user_id=user_id,
+            event_type=event_type,
+            start_date=str(start_date) if start_date else None,
+            end_date=str(end_date) if end_date else None
+        )
+        
+        log_audit_event(req, user, "get_audit_logs", details=validated_filters)
         
         table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
         query = f"SELECT * FROM `{table_id}` WHERE 1=1"
         params = []
-        param_types = []
 
-        if user_id:
+        if validated_filters.get('user_id'):
             query += " AND user_id = @user_id"
-            params.append(bigquery.ScalarQueryParameter("user_id", "STRING", user_id))
-        if event_type:
+            params.append(bigquery.ScalarQueryParameter("user_id", "STRING", validated_filters['user_id']))
+        if validated_filters.get('event_type'):
             query += " AND event_type = @event_type"
-            params.append(bigquery.ScalarQueryParameter("event_type", "STRING", event_type))
-        if start_date:
+            params.append(bigquery.ScalarQueryParameter("event_type", "STRING", validated_filters['event_type']))
+        if validated_filters.get('start_date'):
             query += " AND timestamp >= @start_date"
             params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_date))
-        if end_date:
+        if validated_filters.get('end_date'):
             query += " AND timestamp <= @end_date"
             params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_date))
 
@@ -219,8 +244,27 @@ async def get_audit_logs(
         
         results = [dict(row) for row in query_job.result()]
         return results
+    except ValidationError as ve:
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(ve)}")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve audit logs")
+
+@router.get("/api/admin/verify-status", tags=["Admin"], summary="Verify Admin Status",
+    description="Verifies if the current user has admin privileges.")
+async def verify_admin_status(req: Request, user: dict = Depends(is_admin)):
+    """
+    Endpoint to verify admin status server-side.
+    Returns 200 if user is admin, 403 if not.
+    """
+    try:
+        log_audit_event(req, user, "verify_admin_status")
+        return {"admin": True, "user_id": user.get("uid"), "email": user.get("email")}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to verify admin status")
 
 @router.get("/api/admin/audit-summary", response_model=List[AuditSummaryEntry], tags=["Admin"], summary="Get Audit Summary Statistics",
     description="Retrieves aggregated statistics of audit events.")
@@ -231,7 +275,14 @@ async def get_audit_summary(
     end_date: Optional[datetime] = None
 ):
     try:
-        log_audit_event(req, user, "get_audit_summary", details={"filter_start_date": str(start_date), "filter_end_date": str(end_date)})
+        # Validate request and filter parameters
+        validate_admin_request(req)
+        validated_filters = validate_filter_params(
+            start_date=str(start_date) if start_date else None,
+            end_date=str(end_date) if end_date else None
+        )
+        
+        log_audit_event(req, user, "get_audit_summary", details=validated_filters)
 
         table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"
         query = f"""
@@ -241,10 +292,10 @@ async def get_audit_summary(
         """
         params = []
 
-        if start_date:
+        if validated_filters.get('start_date'):
             query += " AND timestamp >= @start_date"
             params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_date))
-        if end_date:
+        if validated_filters.get('end_date'):
             query += " AND timestamp <= @end_date"
             params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_date))
 
@@ -255,5 +306,12 @@ async def get_audit_summary(
 
         results = [dict(row) for row in query_job.result()]
         return results
+    except ValidationError as ve:
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(ve)}")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the full error for debugging but don't expose to client
+        import logging
+        logging.error(f"Error in get_audit_summary: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve audit summary")

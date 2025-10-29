@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 // GEMINI_FIX_ATTEMPT: 2023-10-27 10:00 - Minimal test comment
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
@@ -29,6 +29,8 @@ const AppPage = () => {
     const [isLoginModalOpen, setLoginModalOpen] = useState(false);
     const [user, setUser] = useState(null);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [adminVerified, setAdminVerified] = useState(false);
+    const [adminVerifying, setAdminVerifying] = useState(false);
     const [finalizedDocs, setFinalizedDocs] = useState([]); // Will hold [{id, product_name, domains}] from DB
     const [searchQuery, setSearchQuery] = useState("");
     const [openDomains, setOpenDomains] = useState(new Set());
@@ -71,6 +73,43 @@ const AppPage = () => {
         }
     };
 
+    // --- Admin Verification ---
+    const verifyAdminStatus = useCallback(async () => {
+        if (!auth.currentUser || adminVerifying) return;
+        
+        setAdminVerifying(true);
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const response = await fetch(`${BACKEND_URL}/api/admin/verify-status`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            
+            if (response.ok) {
+                setAdminVerified(true);
+                return true;
+            } else {
+                setIsAdmin(false);
+                setAdminVerified(false);
+                if (currentPage.startsWith('admin')) {
+                    setCurrentPage('testcases');
+                    toast.error('Access denied: Admin privileges required');
+                }
+                return false;
+            }
+        } catch (error) {
+            console.error('Error verifying admin status:', error);
+            setIsAdmin(false);
+            setAdminVerified(false);
+            if (currentPage.startsWith('admin')) {
+                setCurrentPage('testcases');
+                toast.error('Failed to verify admin access');
+            }
+            return false;
+        } finally {
+            setAdminVerifying(false);
+        }
+    }, [adminVerifying, currentPage]);
+
     // --- Data Fetching and Persistence ---
     const fetchFinalizedCases = async () => {
         if (!auth.currentUser) return;
@@ -112,6 +151,13 @@ const AppPage = () => {
     useEffect(() => {
         setOpenDomains(new Set()); // Clear open domains when product or data changes
     }, [selectedProduct, finalizedDocs]);
+
+    // Verify admin status when accessing admin pages
+    useEffect(() => {
+        if (currentPage.startsWith('admin') && isAdmin && !adminVerified && !adminVerifying) {
+            verifyAdminStatus();
+        }
+    }, [currentPage, isAdmin, adminVerified, adminVerifying, verifyAdminStatus]);
 
     // --- Event Handlers ---
     const handleFineTune = async ({ force = false } = {}) => {
@@ -428,9 +474,37 @@ const AppPage = () => {
                     ) : currentPage === 'reporting' ? (
                         <ReportingPage />
                     ) : currentPage === 'admin' && isAdmin ? (
-                        <AdminPage setCurrentPage={setCurrentPage} setPrefilledFilters={setPrefilledFilters} />
+                        adminVerified ? (
+                            <AdminPage setCurrentPage={setCurrentPage} setPrefilledFilters={setPrefilledFilters} />
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <div className="text-center">
+                                    <div className="animate-spin h-8 w-8 text-gray-500 mx-auto mb-4">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    </div>
+                                    <p className="text-gray-600 dark:text-gray-400">Verifying admin access...</p>
+                                </div>
+                            </div>
+                        )
                     ) : currentPage === 'admin-reporting' && isAdmin ? (
-                        <AdminReportingPage prefilledFilters={prefilledFilters} />
+                        adminVerified ? (
+                            <AdminReportingPage prefilledFilters={prefilledFilters} />
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <div className="text-center">
+                                    <div className="animate-spin h-8 w-8 text-gray-500 mx-auto mb-4">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    </div>
+                                    <p className="text-gray-600 dark:text-gray-400">Verifying admin access...</p>
+                                </div>
+                            </div>
+                        )
                     ) : (
                         <>
                             {isLoadingCases ? (

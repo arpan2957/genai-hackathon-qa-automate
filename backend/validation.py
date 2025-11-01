@@ -121,15 +121,17 @@ def validate_filter_params(
         validated['event_type'] = validate_event_type(event_type)
     
     if start_date:
-        # Basic ISO date format validation
-        if not re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', start_date):
-            raise ValidationError("Invalid start_date format (expected ISO 8601)")
+        # ISO 8601 date format validation (supports various formats)
+        # Matches: YYYY-MM-DDTHH:MM:SS[.fff][Z] or YYYY-MM-DD HH:MM:SS[+/-HH:MM]
+        if not re.match(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$', start_date):
+            raise ValidationError(f"Invalid start_date format (expected ISO 8601). Received: '{start_date}'")
         validated['start_date'] = start_date
     
     if end_date:
-        # Basic ISO date format validation
-        if not re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', end_date):
-            raise ValidationError("Invalid end_date format (expected ISO 8601)")
+        # ISO 8601 date format validation (supports various formats)
+        # Matches: YYYY-MM-DDTHH:MM:SS[.fff][Z] or YYYY-MM-DD HH:MM:SS[+/-HH:MM]
+        if not re.match(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$', end_date):
+            raise ValidationError(f"Invalid end_date format (expected ISO 8601). Received: '{end_date}'")
         validated['end_date'] = end_date
     
     return validated
@@ -193,7 +195,7 @@ class AdminFilterRequest(BaseModel):
     @field_validator('start_date', 'end_date')
     @classmethod
     def validate_date_fields(cls, v):
-        if v and not re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', v):
+        if v and not re.match(r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$', v):
             raise ValueError("Invalid date format (expected ISO 8601)")
         return v
 

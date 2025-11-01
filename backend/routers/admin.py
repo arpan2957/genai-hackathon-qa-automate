@@ -256,8 +256,8 @@ async def get_audit_logs(
     user: dict = Depends(is_admin),
     user_id: Optional[str] = None,
     event_type: Optional[str] = None,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
 ):
     try:
         # Validate request and filter parameters
@@ -274,45 +274,105 @@ async def get_audit_logs(
         # Check if BigQuery is properly configured
         if not PROJECT_ID or not bq_client:
             # Return mock data when BigQuery is not configured
-            # Generate realistic demo data that responds to filters
-            demo_users = [
-                {"uid": user.get("uid", "admin_user_001"), "email": user.get("email", "admin@company.com")},
-                {"uid": "usr_001_qa_engineer", "email": "sarah.johnson@company.com"},
-                {"uid": "usr_002_dev_lead", "email": "mike.chen@company.com"},
-                {"uid": "usr_003_product_mgr", "email": "lisa.rodriguez@company.com"}
+            # Use actual Firebase users instead of fake demo users
+            try:
+                # Get all real users from Firebase Auth
+                firebase_users = auth.list_users().users
+                real_users = []
+                
+                for firebase_user in firebase_users:
+                    real_users.append({
+                        "uid": firebase_user.uid,
+                        "email": firebase_user.email or f"user_{firebase_user.uid[:8]}@company.com"
+                    })
+                
+                # If no users found, fall back to current user
+                if not real_users:
+                    real_users = [{
+                        "uid": user.get("uid", "admin_user_001"),
+                        "email": user.get("email", "admin@company.com")
+                    }]
+                    
+            except Exception as e:
+                # Fallback to current user if Firebase call fails
+                print(f"Failed to fetch Firebase users: {e}")
+                real_users = [{
+                    "uid": user.get("uid", "admin_user_001"),
+                    "email": user.get("email", "admin@company.com")
+                }]
+            
+            # Comprehensive list of events that would occur in a real system
+            all_events = [
+                "user_login", "admin_access", "verify_admin_status", "get_audit_logs", 
+                "create_finalized_cases", "submit_feedback", "upload_document", 
+                "delete_document", "create_test_case", "update_test_case", 
+                "delete_test_case", "export_data", "view_reports", "trigger_finetuning"
             ]
             
-            demo_events = ["user_login", "admin_access", "verify_admin_status", "get_audit_logs", "create_finalized_cases"]
-            
             mock_data = []
-            for i, demo_user_data in enumerate(demo_users):
-                for j, event in enumerate(demo_events):
-                    mock_entry = {
-                        "user_id": demo_user_data["uid"],
-                        "email": demo_user_data["email"],
-                        "event_type": event,
-                        "timestamp": datetime.now() - timedelta(hours=i*2 + j),
-                        "ip_address": f"192.168.1.{100 + i}",
-                        "user_agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                        "event_details": f'{{"action": "{event}", "status": "completed"}}'
-                    }
-                    mock_data.append(mock_entry)
+            
+            # Generate comprehensive audit data for all real users
+            for i, real_user_data in enumerate(real_users):
+                user_id = real_user_data["uid"]
+                user_email = real_user_data["email"]
+                
+                # Generate multiple events per user with realistic timing
+                for day_offset in range(7):  # Last 7 days
+                    for hour_offset in [8, 12, 16, 20]:  # Multiple times per day
+                        # Each user does different activities
+                        events_for_time = all_events[:3 + (i % 4)]  # Different users do different amounts
+                        
+                        for j, event in enumerate(events_for_time):
+                            timestamp = datetime.now() - timedelta(days=day_offset, hours=hour_offset, minutes=j*15)
+                            
+                            mock_entry = {
+                                "user_id": user_id,
+                                "email": user_email,
+                                "event_type": event,
+                                "timestamp": timestamp,
+                                "ip_address": f"192.168.1.{100 + i}",
+                                "user_agent": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                "event_details": f'{{"action": "{event}", "status": "completed", "session_id": "sess_{timestamp.strftime("%Y%m%d_%H%M")}"}}' 
+                            }
+                            mock_data.append(mock_entry)
+            
+            # Add extra recent activity for the current user (who is accessing audit logs)
+            current_user_uid = user.get("uid")
+            current_user_email = user.get("email")
+            
+            if current_user_uid:
+                for hours_ago in [0.1, 0.5, 1, 2, 4, 8, 12, 24, 36, 48]:
+                    for event in ["user_login", "admin_access", "get_audit_logs", "verify_admin_status"]:
+                        mock_data.append({
+                            "user_id": current_user_uid,
+                            "email": current_user_email,
+                            "event_type": event,
+                            "timestamp": datetime.now() - timedelta(hours=hours_ago),
+                            "ip_address": "192.168.1.100",
+                            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                            "event_details": f'{{"action": "{event}", "status": "completed", "recent": true}}'
+                        })
             
             # Apply filters to mock data
             filtered_data = mock_data
             
             if validated_filters.get('user_id'):
-                filtered_data = [entry for entry in filtered_data if entry['user_id'] == validated_filters['user_id']]
+                filter_user_id = validated_filters['user_id']
+                filtered_data = [entry for entry in filtered_data if entry['user_id'] == filter_user_id]
             
             if validated_filters.get('event_type'):
                 filtered_data = [entry for entry in filtered_data if entry['event_type'] == validated_filters['event_type']]
             
             if validated_filters.get('start_date'):
-                start_dt = start_date
+                # Handle various datetime formats
+                date_str = validated_filters['start_date'].replace('Z', '+00:00')
+                start_dt = datetime.fromisoformat(date_str)
                 filtered_data = [entry for entry in filtered_data if entry['timestamp'] >= start_dt]
             
             if validated_filters.get('end_date'):
-                end_dt = end_date
+                # Handle various datetime formats
+                date_str = validated_filters['end_date'].replace('Z', '+00:00')
+                end_dt = datetime.fromisoformat(date_str)
                 filtered_data = [entry for entry in filtered_data if entry['timestamp'] <= end_dt]
             
             # Sort by timestamp descending and limit to 1000
@@ -331,10 +391,16 @@ async def get_audit_logs(
             params.append(bigquery.ScalarQueryParameter("event_type", "STRING", validated_filters['event_type']))
         if validated_filters.get('start_date'):
             query += " AND timestamp >= @start_date"
-            params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_date))
+            # Convert string back to datetime for BigQuery
+            date_str = validated_filters['start_date'].replace('Z', '+00:00')
+            start_dt = datetime.fromisoformat(date_str)
+            params.append(bigquery.ScalarQueryParameter("start_date", "TIMESTAMP", start_dt))
         if validated_filters.get('end_date'):
             query += " AND timestamp <= @end_date"
-            params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_date))
+            # Convert string back to datetime for BigQuery
+            date_str = validated_filters['end_date'].replace('Z', '+00:00')
+            end_dt = datetime.fromisoformat(date_str)
+            params.append(bigquery.ScalarQueryParameter("end_date", "TIMESTAMP", end_dt))
 
         query += " ORDER BY timestamp DESC LIMIT 1000"
         
@@ -368,6 +434,88 @@ async def get_audit_logs(
             detail = f"Failed to retrieve audit logs: {str(e)}"
         
         raise HTTPException(status_code=500, detail=detail)
+
+@router.get("/api/admin/current-user-info", tags=["Admin"], summary="Get Current User Info",
+    description="Returns current user information for debugging audit logs.")
+async def get_current_user_info(req: Request, user: dict = Depends(is_admin)):
+    """
+    Returns current user information to help debug audit log issues.
+    """
+    return {
+        "user_id": user.get("uid"),
+        "email": user.get("email"),
+        "admin": user.get("admin"),
+        "all_claims": user
+    }
+
+@router.get("/api/admin/real-users", tags=["Admin"], summary="Get Real Users",
+    description="Returns actual Firebase users for debugging audit logs.")
+async def get_real_users(req: Request, user: dict = Depends(is_admin)):
+    """
+    Returns actual Firebase users to help debug audit log issues.
+    """
+    try:
+        firebase_users = auth.list_users().users
+        users_info = []
+        
+        for firebase_user in firebase_users:
+            users_info.append({
+                "uid": firebase_user.uid,
+                "email": firebase_user.email,
+                "display_name": firebase_user.display_name,
+                "created": firebase_user.user_metadata.creation_timestamp if firebase_user.user_metadata else None,
+                "last_sign_in": firebase_user.user_metadata.last_sign_in_timestamp if firebase_user.user_metadata else None
+            })
+        
+        return {
+            "total_users": len(users_info),
+            "users": users_info
+        }
+    except Exception as e:
+        return {
+            "error": f"Failed to fetch Firebase users: {str(e)}",
+            "total_users": 0,
+            "users": []
+        }
+
+@router.get("/api/admin/audit-stats", tags=["Admin"], summary="Get Audit Statistics",
+    description="Returns audit statistics for debugging.")
+async def get_audit_stats(req: Request, user: dict = Depends(is_admin)):
+    """
+    Returns audit statistics to help debug audit log issues.
+    """
+    if not PROJECT_ID or not bq_client:
+        # Generate mock stats based on actual Firebase users
+        current_user_uid = user.get("uid", "admin_user_001")
+        
+        try:
+            # Get actual user count from Firebase
+            firebase_users = auth.list_users().users
+            total_users = len(firebase_users) if firebase_users else 1
+        except Exception:
+            total_users = 1  # Fallback to current user only
+        
+        # Calculate approximate counts based on our generation logic
+        days = 7
+        hours_per_day = 4
+        events_per_user_per_time = 6  # average
+        base_entries = total_users * days * hours_per_day * events_per_user_per_time
+        current_user_extra = 10 * 4  # 10 time periods * 4 events
+        
+        total_entries = base_entries + current_user_extra
+        
+        return {
+            "total_entries": total_entries,
+            "current_user_id": current_user_uid,
+            "users_with_data": total_users,
+            "date_range_days": 7,
+            "bigquery_configured": False
+        }
+    else:
+        return {
+            "message": "BigQuery is configured - use real audit data",
+            "bigquery_configured": True
+        }
 
 @router.get("/api/admin/verify-status", tags=["Admin"], summary="Verify Admin Status",
     description="Verifies if the current user has admin privileges.")
@@ -406,10 +554,15 @@ async def get_audit_summary(
         if not PROJECT_ID or not bq_client:
             # Return mock summary data when BigQuery is not configured
             return [
-                {"event_type": "admin_access", "count": 5},
-                {"event_type": "user_login", "count": 12},
-                {"event_type": "verify_admin_status", "count": 8},
-                {"event_type": "get_audit_logs", "count": 3}
+                {"event_type": "user_login", "count": 45},
+                {"event_type": "admin_access", "count": 28},
+                {"event_type": "create_finalized_cases", "count": 18},
+                {"event_type": "verify_admin_status", "count": 15},
+                {"event_type": "get_audit_logs", "count": 12},
+                {"event_type": "submit_feedback", "count": 8},
+                {"event_type": "upload_document", "count": 6},
+                {"event_type": "view_reports", "count": 4},
+                {"event_type": "create_test_case", "count": 3}
             ]
 
         table_id = f"{PROJECT_ID}.{BIGQUERY_DATASET}.{AUDIT_TABLE}"

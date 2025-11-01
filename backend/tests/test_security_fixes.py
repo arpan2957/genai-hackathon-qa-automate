@@ -98,14 +98,14 @@ class TestInputValidation:
         params = validate_filter_params(
             user_id="validuserid123",
             event_type="user_login",
-            start_date="2023-01-01T00:00:00",
-            end_date="2023-12-31T23:59:59"
+            start_date="2023-01-01T00:00:00.000Z",
+            end_date="2023-12-31T23:59:59.999Z"
         )
         
         assert params['user_id'] == "validuserid123"
         assert params['event_type'] == "user_login"
-        assert params['start_date'] == "2023-01-01T00:00:00"
-        assert params['end_date'] == "2023-12-31T23:59:59"
+        assert params['start_date'] == "2023-01-01T00:00:00.000Z"
+        assert params['end_date'] == "2023-12-31T23:59:59.999Z"
     
     def test_validate_filter_params_invalid_date(self):
         """Test filter parameter validation with invalid date."""

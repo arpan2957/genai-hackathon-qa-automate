@@ -28,8 +28,29 @@ const AdminReportingPage = ({ prefilledFilters = {} }) => {
             const queryParams = new URLSearchParams();
             if (filters.user_id) queryParams.append('user_id', filters.user_id);
             if (filters.event_type) queryParams.append('event_type', filters.event_type);
-            if (filters.start_date) queryParams.append('start_date', new Date(filters.start_date).toISOString());
-            if (filters.end_date) queryParams.append('end_date', new Date(filters.end_date).toISOString());
+            
+            // Handle date parameters with validation
+            if (filters.start_date) {
+                try {
+                    const startDate = new Date(filters.start_date);
+                    if (!isNaN(startDate.getTime())) {
+                        queryParams.append('start_date', startDate.toISOString());
+                    }
+                } catch (e) {
+                    console.warn('Invalid start_date format:', filters.start_date, e);
+                }
+            }
+            
+            if (filters.end_date) {
+                try {
+                    const endDate = new Date(filters.end_date);
+                    if (!isNaN(endDate.getTime())) {
+                        queryParams.append('end_date', endDate.toISOString());
+                    }
+                } catch (e) {
+                    console.warn('Invalid end_date format:', filters.end_date, e);
+                }
+            }
             const queryString = queryParams.toString();
 
             // Fetch logs

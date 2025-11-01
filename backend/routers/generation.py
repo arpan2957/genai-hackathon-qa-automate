@@ -198,14 +198,22 @@ async def generate_test_cases(req: Request, request: RequirementRequest, user: D
         if request.refinement_prompt and request.test_cases:
             # Refinement phase
             refined_test_cases_json = agent.refine_test_cases(
-                existing_test_cases=json.dumps([tc.model_dump() for tc in request.test_cases]),
+                requirement=context_text or "No specific requirement provided", # Pass text context as requirement
+                test_cases=json.dumps([tc.model_dump() for tc in request.test_cases]),
                 refinement_prompt=request.refinement_prompt,
-                context=context_text, # Pass text context
                 images=context_images # Pass image context
             )
             refined_test_cases_data = json.loads(_clean_json_response(refined_test_cases_json))
             final_domains = [DomainGroup(domain="Refined Cases", test_cases=[TestCase.model_validate(tc) for tc in refined_test_cases_data])]
             response = GenerateResponse(product_name=product_name, domains=final_domains)
+            
+            # Log the refinement action and return the response
+            log_audit_event(req, user, "ai_refinement", details={
+                "refinement_prompt": request.refinement_prompt,
+                "original_test_cases_count": len(request.test_cases),
+                "refined_test_cases_count": len(final_domains[0].test_cases) if final_domains else 0
+            })
+            return response
 
         elif request.document_text:
             segmented_text = agent.segment_requirements(document_text=request.document_text)

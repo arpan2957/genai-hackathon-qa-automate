@@ -23,7 +23,13 @@ import {
     UsersIcon as HeroUsersIcon,
     ExclamationTriangleIcon as HeroExclamationTriangleIcon,
     ClockIcon as HeroClockIcon,
-    InformationCircleIcon as HeroInformationCircleIcon
+    InformationCircleIcon as HeroInformationCircleIcon,
+    UserIcon as HeroUserIcon,
+    BellIcon as HeroBellIcon,
+    ShieldCheckIcon as HeroShieldCheckIcon,
+    KeyIcon as HeroKeyIcon,
+    GlobeAltIcon as HeroGlobeAltIcon,
+    XMarkIcon as HeroXMarkIcon
 } from '@heroicons/react/24/outline';
 import { HandThumbUpIcon as HeroHandThumbUpSolidIcon } from '@heroicons/react/24/solid';
 
@@ -53,6 +59,13 @@ export const UsersIcon = (props) => <HeroUsersIcon {...props} />;
 export const ExclamationTriangleIcon = (props) => <HeroExclamationTriangleIcon {...props} />;
 export const ClockIcon = (props) => <HeroClockIcon {...props} />;
 export const InformationCircleIcon = (props) => <HeroInformationCircleIcon {...props} />;
+export const UserIcon = (props) => <HeroUserIcon {...props} />;
+export const BellIcon = (props) => <HeroBellIcon {...props} />;
+export const ShieldCheckIcon = (props) => <HeroShieldCheckIcon {...props} />;
+export const KeyIcon = (props) => <HeroKeyIcon {...props} />;
+export const GlobeAltIcon = (props) => <HeroGlobeAltIcon {...props} />;
+export const XMarkIcon = (props) => <HeroXMarkIcon {...props} />;
+export const CogIcon = (props) => <Cog6ToothIcon {...props} />;
 
 export const JiraIcon = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" {...props}>

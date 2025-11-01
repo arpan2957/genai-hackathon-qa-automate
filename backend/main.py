@@ -4,7 +4,7 @@ from firebase_admin import credentials, initialize_app
 import os
 from contextlib import asynccontextmanager
 from database import close_db_connection, init_db
-from routers import generation, crud, feedback, integrations, upload, public_api, reporting, admin, knowledge_base, agent
+from routers import generation, crud, feedback, integrations, upload, public_api, reporting, admin, knowledge_base, agent, user_settings
 # from routers import reporting
 # from routers import admin
 
@@ -48,3 +48,4 @@ app.include_router(reporting.router)
 app.include_router(admin.router)
 app.include_router(knowledge_base.router)
 app.include_router(agent.router)
+app.include_router(user_settings.router)

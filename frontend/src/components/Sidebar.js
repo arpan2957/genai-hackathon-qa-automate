@@ -139,7 +139,7 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
                     </>
                 )}
 
-                <NavLink icon={<SettingsIcon />}>Settings</NavLink>
+                <NavLink icon={<SettingsIcon />} onClick={() => setCurrentPage('settings')} isActive={currentPage === 'settings'}>Settings</NavLink>
             </ul>
             <div className="pl-3 pr-1 py-4 border-t border-gray-200 dark:border-gray-800">
                 <button onClick={toggleTheme} className="flex items-center w-full pl-3 pr-1 py-3 text-sm font-medium rounded-lg text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white">

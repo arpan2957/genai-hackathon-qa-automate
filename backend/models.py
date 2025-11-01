@@ -72,6 +72,7 @@ class KnowledgeBaseDocument(BaseModel):
     image_url: Optional[str] = None
     image_embedding: Optional[List[float]] = None
     document_type: Literal['text', 'image', 'multimodal'] = 'text'
+    detected_frameworks: Optional[List[Dict[str, Any]]] = None
 
 class PostResponse(BaseModel):
     id: str

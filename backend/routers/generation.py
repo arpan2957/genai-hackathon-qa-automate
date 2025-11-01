@@ -113,16 +113,24 @@ async def generate_test_cases(req: Request, request: RequirementRequest, user: D
                             filename,
                             user_id,
                             text_content,
-                            image_url
+                            image_url,
+                            detected_frameworks
                         FROM `{table_id}`
                         WHERE user_id = '{user["uid"]}'
                         ORDER BY upload_date DESC
-                        LIMIT 3
+                        LIMIT 10
                         """
                         query_job = bq_client.query(query)
                         rows = query_job.result()
 
-                        for row in rows:
+                        # Store all rows for potential framework-based filtering
+                        all_rows = list(rows)
+                        
+                        # If we detect frameworks later, we'll prioritize relevant documents
+                        # For now, just use the most recent documents
+                        selected_rows = all_rows[:3]
+
+                        for row in selected_rows:
                             if row.text_content:
                                 context_text += row.text_content + "\n\n"
                             if row.image_url:
@@ -139,6 +147,53 @@ async def generate_test_cases(req: Request, request: RequirementRequest, user: D
         if request.image_data and not primary_input_text:
              # If only image is provided as primary input, also add it to context_images for direct model use
              context_images.append(request.image_data) # Assuming base64 data for immediate use by model
+
+        # Detect compliance frameworks from all available text
+        detected_frameworks = []
+        all_text_for_analysis = ""
+        if request.requirement:
+            all_text_for_analysis += request.requirement + "\n\n"
+        if request.document_text:
+            all_text_for_analysis += request.document_text + "\n\n"
+        if context_text:
+            all_text_for_analysis += context_text
+        
+        if all_text_for_analysis.strip():
+            detected_frameworks = agent.detect_compliance_frameworks(all_text_for_analysis)
+            print(f"Detected compliance frameworks: {detected_frameworks}")
+            
+            # If we have detected frameworks and knowledge base rows, prioritize relevant documents
+            if detected_frameworks and 'all_rows' in locals():
+                framework_names = [f.get("framework", "").lower() for f in detected_frameworks]
+                
+                # Score documents based on framework relevance
+                scored_rows = []
+                for row in all_rows:
+                    score = 0
+                    if hasattr(row, 'detected_frameworks') and row.detected_frameworks:
+                        # Check if any detected frameworks match
+                        for doc_framework in row.detected_frameworks:
+                            doc_framework_name = doc_framework.get("framework", "").lower()
+                            for req_framework in framework_names:
+                                if req_framework in doc_framework_name or doc_framework_name in req_framework:
+                                    score += 10  # High relevance score
+                    
+                    scored_rows.append((score, row))
+                
+                # Sort by score (descending) and take top 3
+                scored_rows.sort(key=lambda x: x[0], reverse=True)
+                selected_rows = [row for score, row in scored_rows[:3]]
+                
+                # Rebuild context with prioritized documents
+                context_text = ""
+                context_images = []
+                for row in selected_rows:
+                    if row.text_content:
+                        context_text += row.text_content + "\n\n"
+                    if row.image_url:
+                        context_images.append(row.image_url)
+                
+                print(f"Prioritized {len(selected_rows)} documents based on compliance framework relevance")
 
         if request.refinement_prompt and request.test_cases:
             # Refinement phase
@@ -176,7 +231,7 @@ async def generate_test_cases(req: Request, request: RequirementRequest, user: D
 "\n".join([f"Image: {img_url}" for img_url in context_images]) if context_images else "")
 
                     requirement_with_context = f"{req}\n\nContext:\n{all_context}"
-                    tc_text = agent.generate_initial_test_cases(requirement=requirement_with_context, images=context_images)
+                    tc_text = agent.generate_initial_test_cases(requirement=requirement_with_context, images=context_images, detected_frameworks=detected_frameworks)
                     tc_data = json.loads(_clean_json_response(tc_text))
                     for tc in tc_data:
                         tc['traceability_id'] = f"{request.requirement_id}-{tc['test_case_id']}" if request.requirement_id else tc['test_case_id']
@@ -195,7 +250,7 @@ async def generate_test_cases(req: Request, request: RequirementRequest, user: D
                     all_context = context_text + "\n\n" + (
 "\n".join([f"Image: {img_url}" for img_url in context_images]) if context_images else "")
                     requirement_with_context = f"{req}\n\nContext:\n{all_context}"
-                    tc_text = agent.generate_initial_test_cases(requirement=requirement_with_context, images=context_images)
+                    tc_text = agent.generate_initial_test_cases(requirement=requirement_with_context, images=context_images, detected_frameworks=detected_frameworks)
                     tc_data = json.loads(_clean_json_response(tc_text))
                     unclassified_test_cases.extend([TestCase.model_validate(tc) for tc in tc_data])
                 if unclassified_test_cases:
@@ -222,8 +277,11 @@ async def generate_manual_test_case_details(req: Request, request: ManualTestCas
         # Combine title and steps to form a requirement for the AI agent
         requirement_text = f"Title: {request.title}\nSteps: {request.steps}"
 
+        # Detect compliance frameworks from the manual test case text
+        detected_frameworks = agent.detect_compliance_frameworks(requirement_text)
+
         # Use the AI to generate initial test cases (we only need one for details)
-        tc_text = agent.generate_initial_test_cases(requirement=requirement_text)
+        tc_text = agent.generate_initial_test_cases(requirement=requirement_text, detected_frameworks=detected_frameworks)
         tc_data = json.loads(_clean_json_response(tc_text))
 
         if not tc_data:

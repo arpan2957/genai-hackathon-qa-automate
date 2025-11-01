@@ -14,6 +14,7 @@ from database import db, bq_client, storage_client
 from config import PROJECT_ID, BIGQUERY_DATASET, BIGQUERY_TABLE, GCS_BUCKET_NAME
 from google.cloud import aiplatform
 from audit import log_audit_event
+from agents.generation_agent import GenerationAgent
 
 router = APIRouter()
 
@@ -104,12 +105,20 @@ async def create_knowledge_base_document(
         elif file: # If both text and image are uploaded
             document_type = 'multimodal'
 
+    # Detect compliance frameworks in uploaded documents
+    detected_frameworks = []
+    if text_content:
+        agent = GenerationAgent()
+        detected_frameworks = agent.detect_compliance_frameworks(text_content)
+        print(f"Detected frameworks in knowledge base document: {detected_frameworks}")
+
     # Save to Firestore
     doc_data = {
         "filename": filename,
         "upload_date": datetime.now(),
         "user_id": user['uid'],
-        "document_type": document_type
+        "document_type": document_type,
+        "detected_frameworks": detected_frameworks
     }
     if text_content: doc_data["text_content"] = text_content # Store text content for retrieval
     if image_url: doc_data["image_url"] = image_url
@@ -123,7 +132,8 @@ async def create_knowledge_base_document(
             "filename": filename,
             "upload_date": doc_data["upload_date"].isoformat(),
             "user_id": user['uid'],
-            "document_type": document_type
+            "document_type": document_type,
+            "detected_frameworks": detected_frameworks
         }
     ]
     if text_embedding_values: rows_to_insert[0]["embedding"] = text_embedding_values

@@ -16,6 +16,7 @@ const AdminReportingPage = ({ prefilledFilters = {} }) => {
         end_date: ''
     });
 
+
     const fetchAuditData = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -33,19 +34,32 @@ const AdminReportingPage = ({ prefilledFilters = {} }) => {
 
             // Fetch logs
             const logsResponse = await fetch(`${BACKEND_URL}/api/admin/audit-logs?${queryString}`, { headers });
-            if (!logsResponse.ok) throw new Error(`Failed to fetch audit logs: ${logsResponse.statusText}`);
+            if (!logsResponse.ok) {
+                const errorData = await logsResponse.json().catch(() => ({ detail: logsResponse.statusText }));
+                throw new Error(errorData.detail || `Failed to fetch audit logs: ${logsResponse.statusText}`);
+            }
             const logsData = await logsResponse.json();
             setAuditLogs(logsData);
 
             // Fetch summary
             const summaryResponse = await fetch(`${BACKEND_URL}/api/admin/audit-summary?${queryString}`, { headers });
-            if (!summaryResponse.ok) throw new Error(`Failed to fetch audit summary: ${summaryResponse.statusText}`);
+            if (!summaryResponse.ok) {
+                const errorData = await summaryResponse.json().catch(() => ({ detail: summaryResponse.statusText }));
+                throw new Error(errorData.detail || `Failed to fetch audit summary: ${summaryResponse.statusText}`);
+            }
             const summaryData = await summaryResponse.json();
             setAuditSummary(summaryData);
 
         } catch (err) {
+            console.error('Audit data fetch error:', err);
             setError(err.message);
-            toast.error(`Error: ${err.message}`);
+            
+            // Show professional error messages
+            if (err.message.includes('BigQuery') || err.message.includes('configuration')) {
+                toast.error('Unable to load audit data. Please try again later.', { duration: 6000 });
+            } else {
+                toast.error(`Error loading audit data: ${err.message}`, { duration: 6000 });
+            }
         } finally {
             setLoading(false);
         }
@@ -77,6 +91,7 @@ const AdminReportingPage = ({ prefilledFilters = {} }) => {
                 <p className="font-bold">Audit Access</p>
                 <p>You are accessing sensitive user audit data. All access to this page is logged.</p>
             </div>
+
 
             {/* Filters */}
             <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 border border-gray-200 dark:border-gray-700 rounded-lg">

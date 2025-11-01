@@ -20,6 +20,10 @@ async def generate_test_cases_tool(requirement: str, product_name: Optional[str]
         # Instantiate the agent inside the function
         agent = GenerationAgent()
         requirements = [requirement]
+        
+        # Detect compliance frameworks from the requirement
+        detected_frameworks = agent.detect_compliance_frameworks(requirement)
+        
         classified_text = agent.classify_requirements(product_name=product_name, requirements=requirements)
         classified_data = json.loads(_clean_json_response(classified_text))
 
@@ -27,7 +31,7 @@ async def generate_test_cases_tool(requirement: str, product_name: Optional[str]
         for domain, reqs in classified_data.get("domains", {}).items():
             domain_test_cases = []
             for req in reqs:
-                tc_text = agent.generate_initial_test_cases(requirement=req)
+                tc_text = agent.generate_initial_test_cases(requirement=req, detected_frameworks=detected_frameworks)
                 tc_data = json.loads(_clean_json_response(tc_text))
                 domain_test_cases.extend([TestCase.model_validate(tc) for tc in tc_data])
             if domain_test_cases:
@@ -39,7 +43,7 @@ async def generate_test_cases_tool(requirement: str, product_name: Optional[str]
         if unclassified_reqs:
             unclassified_test_cases = []
             for req in unclassified_reqs:
-                tc_text = agent.generate_initial_test_cases(requirement=req)
+                tc_text = agent.generate_initial_test_cases(requirement=req, detected_frameworks=detected_frameworks)
                 tc_data = json.loads(_clean_json_response(tc_text))
                 unclassified_test_cases.extend([TestCase.model_validate(tc) for tc in tc_data])
             if unclassified_test_cases:

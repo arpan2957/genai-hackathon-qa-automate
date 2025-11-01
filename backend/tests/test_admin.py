@@ -125,3 +125,43 @@ def test_trigger_finetuning_success_and_flags_data(mock_storage_client, mock_db,
     expected_calls = [call.update(doc.reference, {'processed_for_tuning': True}) for doc in mock_feedback_docs]
     mock_batch.assert_has_calls(expected_calls, any_order=True)
     mock_batch.commit.assert_called_once()
+
+@patch('routers.admin.run_finetuning_pipeline')
+@patch('routers.admin.storage_client')
+@patch('routers.admin.db')
+@patch('routers.admin.aiplatform.PipelineJob.list')
+def test_trigger_finetuning_gcp_permission_error(mock_pipeline_list, mock_db, mock_storage_client, mock_run_pipeline, client, mock_feedback_docs):
+    """Test that GCP permission errors are handled properly"""
+    from google.api_core.exceptions import PermissionDenied
+    
+    mock_pipeline_list.return_value = []
+    mock_db.collection.return_value.where.return_value.stream.return_value = mock_feedback_docs
+    
+    # Mock a permission denied error
+    mock_run_pipeline.side_effect = PermissionDenied("Permission denied")
+    
+    response = client.post("/api/admin/trigger-finetuning?force=true")
+    
+    assert response.status_code == 403
+    assert "Permission denied" in response.json()["detail"]
+    assert "GCP credentials" in response.json()["detail"]
+
+@patch('routers.admin.run_finetuning_pipeline')
+@patch('routers.admin.storage_client')
+@patch('routers.admin.db')
+@patch('routers.admin.aiplatform.PipelineJob.list')
+def test_trigger_finetuning_gcs_bucket_not_found(mock_pipeline_list, mock_db, mock_storage_client, mock_run_pipeline, client, mock_feedback_docs):
+    """Test that GCS bucket not found errors are handled properly"""
+    from google.cloud.exceptions import NotFound
+    
+    mock_pipeline_list.return_value = []
+    mock_db.collection.return_value.where.return_value.stream.return_value = mock_feedback_docs
+    
+    # Mock a bucket not found error
+    mock_storage_client.bucket.side_effect = NotFound("Bucket not found")
+    
+    response = client.post("/api/admin/trigger-finetuning?force=true")
+    
+    assert response.status_code == 404
+    assert "bucket not found" in response.json()["detail"].lower()
+    assert "GCS_BUCKET_NAME" in response.json()["detail"]

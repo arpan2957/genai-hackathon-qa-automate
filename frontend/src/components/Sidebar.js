@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { LogoIcon, TestCaseIcon, SettingsIcon, SunIcon, MoonIcon, FolderIcon, DesktopIcon, DatabaseIcon, ChartBarIcon, UsersIcon, SparklesIcon } from './icons';
 
-const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, selectedProduct, setSelectedProduct, isLoadingCases, currentPage, setCurrentPage, isAdmin, handleFineTune }) => {
+const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, selectedProduct, setSelectedProduct, isLoadingCases, currentPage, setCurrentPage, isAdmin }) => {
     const { theme, toggleTheme } = useTheme();
     const [isHovering, setHovering] = useState(false);
     const isExpanded = isPinned || isHovering;
@@ -135,7 +135,7 @@ const Sidebar = ({ isPinned, isMobileOpen, setMobileOpen, uniqueProducts, select
                         <div className="px-3 py-2 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase">Admin</div>
                         <NavLink icon={<UsersIcon />} onClick={() => setCurrentPage('admin')} isActive={currentPage === 'admin'}>User Management</NavLink>
                         <NavLink icon={<ChartBarIcon />} onClick={() => setCurrentPage('admin-reporting')} isActive={currentPage === 'admin-reporting'}>Audit Logs</NavLink>
-                        <NavLink icon={<SparklesIcon />} onClick={handleFineTune}>Fine-Tune Model</NavLink>
+                        <NavLink icon={<SparklesIcon />} onClick={() => setCurrentPage('fine-tuning')} isActive={currentPage === 'fine-tuning'}>Fine-Tune Model</NavLink>
                     </>
                 )}
 

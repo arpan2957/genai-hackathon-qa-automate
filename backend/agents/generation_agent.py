@@ -1,116 +1,44 @@
+"""
+Refactored GenerationAgent - Clean, modular, and maintainable.
+This is the main agent class that orchestrates test case generation using specialized modules.
+"""
+
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import google.generativeai as genai
 from google.adk.agents import Agent
+
 from config import GENAI_MODEL, GENAI_VISION_MODEL
-import requests
-from PIL import Image
-import io
-import base64
+from .prompts import (
+    GENERATE_SYSTEM_PROMPT, 
+    SEGMENTATION_PROMPT, 
+    CLASSIFICATION_PROMPT
+)
+from .compliance_handler import ComplianceFrameworkHandler
+from .safety_config import get_safety_settings_for_context, safety_manager
+from .image_utils import ImageLoader
 
-# System prompt for generating test cases from a single requirement
-GENERATE_SYSTEM_PROMPT = """
-As an expert QA Engineer specializing in regulated healthcare software, your task is to analyze a software requirement and generate a comprehensive set of test cases.
-
-**Context:**
-The software is for the healthcare industry, so you must consider factors like data privacy (HIPAA), security, user roles (e.g., doctor, nurse, admin, patient), and data integrity. Be aware of standards like ISO 13485 and ISO 27001 in your thinking.
-
-**Instructions:**
-1.  Generate between 8 and 10 test cases for the given requirement.
-2.  Include a mix of **Positive** ("happy path") and **Negative** (error conditions, invalid input) test cases.
-3.  Include test cases for edge conditions, boundary values, and security aspects like access control.
-4.  For each test case, suggest a relevant compliance tag (e.g., "HIPAA-164.312(b)", "ISO-27001-A.9.2.2").
-5.  The output **MUST** be a valid JSON array of objects. Do not include any text, comments, or markdown formatting before or after the JSON array. The response must start with `[` and end with `]`
-
-**JSON Schema:**
-Each object in the array must follow this exact schema:
-{
-  "test_case_id": "string (e.g., TC-001)",
-  "title": "string",
-  "type": "string ('Positive' or 'Negative')",
-  "priority": "string ('Critical', 'High', 'Medium', or 'Low')",
-  "steps": [
-    {
-      "step": "integer",
-      "action": "string",
-      "expected_result": "string"
-    }
-  ],
-  "compliance_tag": "string"
-}
-"""
-
-# System prompt for segmenting a large document into individual requirements
-SEGMENTATION_PROMPT = """
-As an expert Business Analyst specializing in software requirements engineering, your task is to analyze a large text document containing software requirements and break it down into a list of distinct, individual requirements.
-
-**Instructions:**
-1.  Read the entire document text provided.
-2.  Identify each discrete functional or non-functional requirement.
-3.  Each requirement should be a self-contained statement.
-4.  The output **MUST** be a valid JSON array of strings. Each string in the array is a single, complete requirement.
-5.  Do not include any text, comments, or markdown formatting before or after the JSON array. The response must start with `[` and end with `]`
-
-**Example Input Text:**
-"The system shall allow users to log in with their username and password. After logging in, users should be able to see their dashboard. The system must also support password reset via email. All passwords must be stored securely."
-
-**Example JSON Output:**
-[
-  "The system shall allow users to log in with their username and password.",
-  "After logging in, users should be able to see their dashboard.",
-  "The system must also support password reset via email.",
-  "All passwords must be stored securely."
-]
-"""
-
-# System prompt for classifying requirements into domains
-CLASSIFICATION_PROMPT = """
-As an expert QA Architect who specializes in categorizing software requirements into logical domains for testing purposes.
-
-**Instructions:**
-1.  You will be given a product name and a JSON list of individual software requirements.
-2.  Analyze each requirement and classify it into one of the following domains: ["Authentication", "User Management", "File Operations", "Security", "UI/UX", "Performance", "Data Management", "Other"].
-3.  Group the requirements by their classified domain.
-4.  The output **MUST** be a single valid JSON object. Do not include any text, comments, or markdown formatting before or after the JSON.
-5.  The JSON object should have a `product_name` key and a `domains` key.
-6.  The `domains` key will contain an object where each key is a domain name, and the value is an array of the requirements that belong to that domain.
-
-**Example Input:**
-Product Name: "HealthRecord Pro"
-Requirements: 
-[
-  "The system shall allow users to log in with their username and password.",
-  "Users should be able to upload PDF documents.",
-  "The user interface must be responsive on mobile devices.",
-  "All patient data must be encrypted at rest.",
-  "The system must support password reset via email."
-]
-
-**Example JSON Output:**
-{
-  "product_name": "HealthRecord Pro",
-  "domains": {
-    "Authentication": [
-      "The system shall allow users to log in with their username and password.",
-      "The system must support password reset via email."
-    ],
-    "File Operations": [
-      "Users should be able to upload PDF documents."
-    ],
-    "UI/UX": [
-      "The user interface must be responsive on mobile devices."
-    ],
-    "Security": [
-      "All patient data must be encrypted at rest."
-    ]
-  }
-}
-"""
 
 class GenerationAgent(Agent):
+    """
+    AI-powered test case generation agent.
+    
+    This agent specializes in generating comprehensive test cases from software requirements,
+    with intelligent compliance framework detection and dynamic prompt adaptation.
+    """
+    
     vision_model: str
-
+    compliance_handler: Optional[ComplianceFrameworkHandler] = None
+    image_loader: Optional[ImageLoader] = None
+    
     def __init__(self, model_name: str = GENAI_MODEL, vision_model: str = GENAI_VISION_MODEL):
+        """
+        Initialize the GenerationAgent.
+        
+        Args:
+            model_name: The Gemini model to use for text generation
+            vision_model: The Gemini model to use for vision tasks
+        """
         super().__init__(
             name="generation_agent",
             model=model_name,
@@ -120,105 +48,136 @@ class GenerationAgent(Agent):
                 self.refine_test_cases,
                 self.segment_requirements,
                 self.classify_requirements,
+                self.detect_compliance_frameworks,
             ]
         )
         self.model = model_name
-        self.vision_model = GENAI_VISION_MODEL
-
-    def _load_image_from_url(self, url: str) -> Image.Image:
-        if url.startswith("gs://"):
-            try:
-                # e.g., gs://my-bucket/path/to/image.jpg
-                bucket_name = url.split("/")[2]
-                blob_name = "/".join(url.split("/")[3:])
-                
-                bucket = storage_client.bucket(bucket_name)
-                blob = bucket.blob(blob_name)
-                
-                image_bytes = blob.download_as_bytes()
-                return Image.open(io.BytesIO(image_bytes))
-            except Exception as e:
-                print(f"Error loading image from GCS URL {url}: {e}")
-                # Return a placeholder image or raise an exception
-                return Image.new('RGB', (60, 30), color = 'grey')
-        elif url.startswith("http://") or url.startswith("https://"):
-            response = requests.get(url)
-            response.raise_for_status()
-            return Image.open(io.BytesIO(response.content))
-        elif url.startswith("data:image/"):
-            # Handle base64 encoded image
-            header, encoded = url.split(",", 1)
-            data = base64.b64decode(encoded)
-            return Image.open(io.BytesIO(data))
-        else:
-            raise ValueError(f"Unsupported image URL format: {url}")
-
+        self.vision_model = vision_model
+        self.compliance_handler = ComplianceFrameworkHandler(model_name)
+        self.image_loader = ImageLoader()
+    
     def segment_requirements(self, document_text: str) -> str:
-        """Analyzes a large text document and segments it into a list of individual requirements."""
+        """
+        Analyzes a large text document and segments it into individual requirements.
+        
+        Args:
+            document_text: The document text to segment
+            
+        Returns:
+            JSON string containing array of individual requirements
+        """
         model = genai.GenerativeModel(
             self.model,
             system_instruction=SEGMENTATION_PROMPT
         )
+        
         user_prompt = f"""**Document Text to be Segmented:**
 {document_text}"""
-        safety_settings = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
-        response = model.generate_content(user_prompt, safety_settings=safety_settings)
-        return response.text
-
+        
+        safety_settings = get_safety_settings_for_context("document_processing")
+        
+        try:
+            response = model.generate_content(user_prompt, safety_settings=safety_settings)
+            return response.text
+        except Exception as e:
+            safety_manager.handle_safety_block(e, "document_segmentation")
+            raise
+    
     def classify_requirements(self, product_name: str, requirements: List[str]) -> str:
-        """Classifies a list of requirements into domains and associates them with a product name."""
+        """
+        Classifies requirements into logical domains for testing purposes.
+        
+        Args:
+            product_name: Name of the product/system
+            requirements: List of individual requirements
+            
+        Returns:
+            JSON string containing classified requirements by domain
+        """
         model = genai.GenerativeModel(
             self.model,
             system_instruction=CLASSIFICATION_PROMPT
         )
-        # Format the requirements list into a JSON string for the prompt
-        requirements_json_string = json.dumps(requirements, indent=2)
+        
+        requirements_json = json.dumps(requirements, indent=2)
         user_prompt = f'''**Product Name:** "{product_name}"
 **Requirements:**
-{requirements_json_string}'''
+{requirements_json}'''
         
-        safety_settings = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
-        response = model.generate_content(user_prompt, safety_settings=safety_settings)
-        return response.text
-
-    def generate_initial_test_cases(self, requirement: str, images: Optional[List[str]] = None) -> str:
-        """Generates the initial set of test cases based on a given requirement and optional images."""
+        safety_settings = get_safety_settings_for_context("internal")
+        
+        try:
+            response = model.generate_content(user_prompt, safety_settings=safety_settings)
+            return response.text
+        except Exception as e:
+            safety_manager.handle_safety_block(e, "requirement_classification")
+            raise
+    
+    def generate_initial_test_cases(
+        self, 
+        requirement: str, 
+        images: Optional[List[str]] = None, 
+        detected_frameworks: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
+        """
+        Generates comprehensive test cases from a software requirement.
+        
+        Args:
+            requirement: The software requirement to test
+            images: Optional list of image URLs for context
+            detected_frameworks: Optional list of detected compliance frameworks
+            
+        Returns:
+            JSON string containing generated test cases
+        """
+        # Use dynamic prompt based on compliance frameworks
+        if detected_frameworks:
+            system_prompt = self.compliance_handler.create_dynamic_system_prompt(detected_frameworks)
+        else:
+            system_prompt = GENERATE_SYSTEM_PROMPT
+        
         model = genai.GenerativeModel(
             self.vision_model if images else self.model,
-            system_instruction=GENERATE_SYSTEM_PROMPT
+            system_instruction=system_prompt
         )
         
+        # Prepare content for the model
         contents = [f'''**Requirement to test:**
 "{requirement}"''']
+        
+        # Load and add images if provided
         if images:
-            for img_url in images:
-                try:
-                    img = self._load_image_from_url(img_url)
-                    contents.append(img)
-                except Exception as e:
-                    print(f"Error loading image {img_url}: {e}")
-
-        safety_settings = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
-        response = model.generate_content(contents, safety_settings=safety_settings)
-        return response.text
-
-    def refine_test_cases(self, requirement: str, test_cases: str, refinement_prompt: str, images: Optional[List[str]] = None) -> str:
-        """Refines the existing test cases based on a user's refinement prompt and optional images."""
+            loaded_images = self._load_images_safely(images)
+            contents.extend(loaded_images)
+        
+        safety_settings = get_safety_settings_for_context("test_generation")
+        
+        try:
+            response = model.generate_content(contents, safety_settings=safety_settings)
+            return response.text
+        except Exception as e:
+            safety_manager.handle_safety_block(e, "test_case_generation")
+            raise
+    
+    def refine_test_cases(
+        self, 
+        requirement: str, 
+        test_cases: str, 
+        refinement_prompt: str, 
+        images: Optional[List[str]] = None
+    ) -> str:
+        """
+        Refines existing test cases based on user feedback.
+        
+        Args:
+            requirement: Original requirement
+            test_cases: Existing test cases (JSON string)
+            refinement_prompt: User's refinement instructions
+            images: Optional list of image URLs for context
+            
+        Returns:
+            JSON string containing refined test cases
+        """
         model = genai.GenerativeModel(
             self.vision_model if images else self.model,
             system_instruction=GENERATE_SYSTEM_PROMPT
@@ -236,19 +195,81 @@ class GenerationAgent(Agent):
 "{refinement_prompt}"
 
 Please refine the existing test cases based on the refinement prompt. The output **MUST** be a valid JSON array of objects, following the same schema as before.''']
+        
+        # Load and add images if provided
         if images:
-            for img_url in images:
-                try:
-                    img = self._load_image_from_url(img_url)
-                    contents.append(img)
-                except Exception as e:
-                    print(f"Error loading image {img_url}: {e}")
+            loaded_images = self._load_images_safely(images)
+            contents.extend(loaded_images)
+        
+        safety_settings = get_safety_settings_for_context("test_generation")
+        
+        try:
+            response = model.generate_content(contents, safety_settings=safety_settings)
+            return response.text
+        except Exception as e:
+            safety_manager.handle_safety_block(e, "test_case_refinement")
+            raise
+    
+    def detect_compliance_frameworks(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Detects compliance frameworks mentioned in the given text.
+        
+        Args:
+            text: Text to analyze for compliance frameworks
+            
+        Returns:
+            List of detected compliance frameworks with metadata
+        """
+        return self.compliance_handler.detect_compliance_frameworks(text)
+    
+    def _build_compliance_context(self, frameworks: Optional[List[Dict[str, Any]]]) -> str:
+        """Build compliance-specific context (delegated to compliance handler)."""
+        return self.compliance_handler.build_compliance_context(frameworks)
+    
+    def _create_dynamic_system_prompt(self, compliance_context: str) -> str:
+        """Create dynamic system prompt (delegated to compliance handler)."""
+        return self.compliance_handler.create_dynamic_system_prompt(compliance_context)
+    
+    def _load_images_safely(self, image_urls: List[str]) -> List:
+        """
+        Safely load images from URLs with error handling.
+        
+        Args:
+            image_urls: List of image URLs to load
+            
+        Returns:
+            List of successfully loaded PIL Image objects
+        """
+        loaded_images = []
+        for url in image_urls:
+            try:
+                image = self.image_loader.load_image_from_url(url)
+                # Prepare image for AI processing
+                optimized_image = self.image_loader.prepare_image_for_ai(image)
+                loaded_images.append(optimized_image)
+            except Exception as e:
+                print(f"Error loading image {url}: {e}")
+                # Continue without this image rather than failing completely
+                continue
+        
+        return loaded_images
+    
+    def get_agent_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the agent's performance and safety.
+        
+        Returns:
+            Dictionary containing agent statistics
+        """
+        return {
+            "model": self.model,
+            "vision_model": self.vision_model,
+            "safety_stats": safety_manager.get_safety_stats(),
+            "tools_available": len(self.tools) if hasattr(self, 'tools') else 0
+        }
 
-        safety_settings = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
-        response = model.generate_content(contents, safety_settings=safety_settings)
-        return response.text
+
+# Backward compatibility - maintain the same interface
+def _load_image_from_url(url: str):
+    """Backward compatibility function."""
+    return ImageLoader.load_image_from_url(url)

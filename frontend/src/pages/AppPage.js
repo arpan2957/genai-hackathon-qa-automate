@@ -17,6 +17,7 @@ import KnowledgeBasePage from './KnowledgeBasePage';
 import ReportingPage from './ReportingPage';
 import AdminPage from './AdminPage';
 import AdminReportingPage from './AdminReportingPage';
+import FineTuningPage from './FineTuningPage';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
 
@@ -88,21 +89,43 @@ const AppPage = () => {
                 setAdminVerified(true);
                 return true;
             } else {
+                // Get the error details from the response
+                let errorDetail = 'Unknown error';
+                try {
+                    const errorData = await response.json();
+                    errorDetail = errorData.detail || `HTTP ${response.status}`;
+                } catch (e) {
+                    errorDetail = `HTTP ${response.status} - ${response.statusText}`;
+                }
+                
+                console.error('Admin verification failed:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    detail: errorDetail
+                });
+                
                 setIsAdmin(false);
                 setAdminVerified(false);
                 if (currentPage.startsWith('admin')) {
                     setCurrentPage('testcases');
-                    toast.error('Access denied: Admin privileges required');
+                    toast.error(`Access denied: ${errorDetail}`);
                 }
                 return false;
             }
         } catch (error) {
             console.error('Error verifying admin status:', error);
+            
+            // Try to get more detailed error information
+            if (error.response) {
+                console.error('Response status:', error.response.status);
+                console.error('Response data:', error.response.data);
+            }
+            
             setIsAdmin(false);
             setAdminVerified(false);
             if (currentPage.startsWith('admin')) {
                 setCurrentPage('testcases');
-                toast.error('Failed to verify admin access');
+                toast.error(`Failed to verify admin access: ${error.message || 'Network error'}`);
             }
             return false;
         } finally {
@@ -160,36 +183,6 @@ const AppPage = () => {
     }, [currentPage, isAdmin, adminVerified, adminVerifying, verifyAdminStatus]);
 
     // --- Event Handlers ---
-    const handleFineTune = async ({ force = false } = {}) => {
-        if (!auth.currentUser) return;
-        const toastId = toast.loading('Initiating fine-tuning job...');
-
-        try {
-            const token = await auth.currentUser.getIdToken();
-            const response = await fetch(`${BACKEND_URL}/api/admin/trigger-finetuning?force=${force}`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                toast.success(data.message, { id: toastId });
-            } else if (response.status === 428) { // Precondition Required
-                toast.dismiss(toastId);
-                setConfirmModalProps({
-                    title: "Confirm Fine-Tuning",
-                    message: `${data.detail} Do you want to proceed anyway?`,
-                    onConfirm: () => handleFineTune({ force: true }),
-                });
-                setConfirmModalOpen(true);
-            } else {
-                throw new Error(data.detail || "An unknown error occurred.");
-            }
-        } catch (error) {
-            toast.error(`Error: ${error.message}`, { id: toastId });
-        }
-    };
 
     const handleFinalize = async (generatedResult) => {
         if (!auth.currentUser) return;
@@ -465,7 +458,7 @@ const AppPage = () => {
 
     return (
         <div className={`flex h-screen bg-gray-100 dark:bg-gray-900`}>
-            <Sidebar isMobileOpen={isMobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} isPinned={isSidebarPinned} uniqueProducts={uniqueProducts} selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} isLoadingCases={isLoadingCases} currentPage={currentPage} setCurrentPage={setCurrentPage} isAdmin={isAdmin} handleFineTune={handleFineTune} />
+            <Sidebar isMobileOpen={isMobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} isPinned={isSidebarPinned} uniqueProducts={uniqueProducts} selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct} isLoadingCases={isLoadingCases} currentPage={currentPage} setCurrentPage={setCurrentPage} isAdmin={isAdmin} />
             <div className={`flex-1 flex flex-col transition-all duration-300`}>
                 <Header setMobileSidebarOpen={setMobileSidebarOpen} setSidebarPinned={setSidebarPinned} isSidebarPinned={isSidebarPinned} setAiModalOpen={setAiModalOpen} setCreateModalOpen={setCreateModalOpen} user={user} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
                 <main className="flex-1 p-6 overflow-y-auto">
@@ -492,6 +485,17 @@ const AppPage = () => {
                     ) : currentPage === 'admin-reporting' && isAdmin ? (
                         adminVerified ? (
                             <AdminReportingPage prefilledFilters={prefilledFilters} />
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <div className="text-center">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                                    <p className="text-gray-600 dark:text-gray-400">Verifying admin access...</p>
+                                </div>
+                            </div>
+                        )
+                    ) : currentPage === 'fine-tuning' && isAdmin ? (
+                        adminVerified ? (
+                            <FineTuningPage />
                         ) : (
                             <div className="flex items-center justify-center h-full">
                                 <div className="text-center">

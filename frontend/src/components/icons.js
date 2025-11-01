@@ -20,7 +20,10 @@ import {
     HandThumbUpIcon as HeroHandThumbUpIcon,
     HandThumbDownIcon as HeroHandThumbDownIcon,
     ChartBarIcon as HeroChartBarIcon,
-    UsersIcon as HeroUsersIcon
+    UsersIcon as HeroUsersIcon,
+    ExclamationTriangleIcon as HeroExclamationTriangleIcon,
+    ClockIcon as HeroClockIcon,
+    InformationCircleIcon as HeroInformationCircleIcon
 } from '@heroicons/react/24/outline';
 import { HandThumbUpIcon as HeroHandThumbUpSolidIcon } from '@heroicons/react/24/solid';
 
@@ -47,6 +50,9 @@ export const ThumbsDownIcon = (props) => <HeroHandThumbDownIcon {...props} />;
 export const ThumbsUpSolidIcon = (props) => <HeroHandThumbUpSolidIcon {...props} />; 
 export const ChartBarIcon = (props) => <HeroChartBarIcon {...props} />;
 export const UsersIcon = (props) => <HeroUsersIcon {...props} />;
+export const ExclamationTriangleIcon = (props) => <HeroExclamationTriangleIcon {...props} />;
+export const ClockIcon = (props) => <HeroClockIcon {...props} />;
+export const InformationCircleIcon = (props) => <HeroInformationCircleIcon {...props} />;
 
 export const JiraIcon = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" {...props}>

@@ -22,21 +22,22 @@ async def get_user_from_request(request: Request) -> Dict[str, Any]:
         return None
 
 async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
-    print(f"Received token: {token[:30]}...") # Print first 30 chars of token
     try:
         decoded_token = auth.verify_id_token(token)
-        print(f"Token successfully decoded for user: {decoded_token.get('email')}")
         log_audit_event(request, decoded_token, "user_login", details={})
         return decoded_token
     except Exception as e:
-        print(f"Error verifying token: {e}")
-        raise HTTPException(status_code=401, detail=f"Invalid authentication credentials: {e}", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials", headers={"WWW-Authenticate": "Bearer"})
 
-async def is_admin(user: Dict[str, Any] = Depends(get_current_user)) -> bool:
+async def is_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """Checks if the user has an 'admin' custom claim in their token."""
     if user.get('admin') is True:
-        return True
-    raise HTTPException(status_code=403, detail="User is not authorized to perform this action.")
+        return user
+    
+    raise HTTPException(
+        status_code=403, 
+        detail="User is not authorized to perform this action."
+    )
 
 async def verify_agent_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> bool:
     """

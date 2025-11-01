@@ -1,10 +1,11 @@
 import os
 from typing import Dict, Any
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Header # Added Header
 from fastapi.security import OAuth2PasswordBearer
 from firebase_admin import auth
 from datetime import datetime
 from audit import log_audit_event
+from config import AGENT_API_KEY # Added AGENT_API_KEY import
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -36,3 +37,13 @@ async def is_admin(user: Dict[str, Any] = Depends(get_current_user)) -> bool:
     if user.get('admin') is True:
         return True
     raise HTTPException(status_code=403, detail="User is not authorized to perform this action.")
+
+async def verify_agent_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> bool:
+    """
+    Verifies the API key provided in the X-API-Key header for agent access.
+    """
+    if not AGENT_API_KEY:
+        raise HTTPException(status_code=500, detail="Agent API Key not configured on server.")
+    if x_api_key != AGENT_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid Agent API Key.")
+    return True

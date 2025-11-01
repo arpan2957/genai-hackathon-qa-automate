@@ -47,3 +47,6 @@ if GDPR_COMPLIANT and not GDPR_SECRET_KEY:
 
 # --- Public API Configuration ---
 PUBLIC_API_KEY = os.getenv("PUBLIC_API_KEY")
+
+# --- Agent API Configuration ---
+AGENT_API_KEY = os.getenv("AGENT_API_KEY")

@@ -66,63 +66,94 @@ To run this project locally, you will need to run the frontend and backend serve
     ```
     The frontend development server will start, and you can view the application in your browser at `http://localhost:3000`.
 
-## Manual Deployment
+## Deployment
 
-These steps outline how to manually deploy the application to Google Cloud Platform.
+This application supports both automated and manual deployment strategies.
 
-### Backend Deployment (Google Cloud Run)
+### Automated Deployment (Recommended)
+
+The application uses GitHub Actions for automated CI/CD with path-based triggers, security scanning, and zero-downtime deployments.
+
+#### Quick Setup
+
+1. **Run the setup script:**
+   ```bash
+   ./scripts/setup-gcp-cicd.sh YOUR_PROJECT_ID your-github-username/repository-name
+   ```
+
+2. **Add GitHub Secrets:**
+   Add the following secrets to your GitHub repository (Settings → Secrets and variables → Actions):
+   ```
+   GCP_PROJECT_ID: your-gcp-project-id
+   FIREBASE_PROJECT_ID: your-firebase-project-id
+   WIF_PROVIDER: projects/.../workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+   WIF_SERVICE_ACCOUNT: github-actions-sa@your-project.iam.gserviceaccount.com
+   FIREBASE_TOKEN: your-firebase-ci-token
+   ```
+
+3. **Update Secret Manager:**
+   ```bash
+   echo "your-actual-google-api-key" | gcloud secrets versions add google-api-key --data-file=-
+   ```
+
+4. **Push to main branch** to trigger automated deployment.
+
+#### Features
+
+- **Path-based triggers**: Only deploy what changed (backend/ or frontend/)
+- **Security scanning**: Automated vulnerability detection and compliance checks
+- **Keyless authentication**: Workload Identity Federation (no service account keys)
+- **Zero-downtime deployment**: Rolling updates with health checks
+- **Comprehensive testing**: Unit tests, linting, and smoke tests
+- **Monitoring**: Built-in observability and alerting
+
+For detailed setup instructions, see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+#### Pipeline Status
+
+- **Backend**: Deploys to Google Cloud Run (containerized FastAPI)
+- **Frontend**: Deploys to Firebase Hosting (static React build)
+- **Security**: Daily security scans and compliance checks
+- **Monitoring**: Cloud Logging, metrics, and health checks
+
+### Manual Deployment (Fallback)
+
+#### Backend Deployment (Google Cloud Run)
 
 **Prerequisites:**
 *   Google Cloud SDK (`gcloud`) installed and configured.
 *   A GCP project with the Cloud Run and Artifact Registry APIs enabled.
 
-1.  **Build the Docker Image:**
-    From the `backend` directory, build the Docker image:
+1.  **Deploy using Cloud Build:**
     ```bash
-    docker build -t gcr.io/YOUR_PROJECT_ID/ai-test-case-generator-backend .
+    cd backend
+    gcloud builds submit --config cloudbuild.yaml
     ```
 
-2.  **Push the Image to Artifact Registry:**
-    ```bash
-    docker push gcr.io/YOUR_PROJECT_ID/ai-test-case-generator-backend
-    ```
-
-3.  **Deploy to Cloud Run:**
-    ```bash
-    gcloud run deploy ai-test-case-generator-backend \
-      --image gcr.io/YOUR_PROJECT_ID/ai-test-case-generator-backend \
-      --platform managed \
-      --region asia-south1 \
-      
-      --set-env-vars GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY",FRONTEND_ORIGIN="https://your-firebase-project-id.web.app"
-    ```
-    **Note on Security:** After deployment, your Cloud Run service will be private. To allow your Firebase-hosted frontend to access it, you must grant the Firebase service account (typically `YOUR_PROJECT_ID@appspot.gserviceaccount.com`) the `roles/run.invoker` role on your Cloud Run service. You can do this via the GCP Console (Cloud Run -> Service -> Permissions) or using `gcloud` CLI.
-    ```
-
-### Frontend Deployment (Firebase Hosting)
+#### Frontend Deployment (Firebase Hosting)
 
 **Prerequisites:**
 *   Firebase CLI installed (`npm install -g firebase-tools`).
 *   A Firebase project created in the Firebase console.
 
-1.  **Initialize Firebase:**
-    From the `frontend` directory, run:
+1.  **Deploy using Cloud Build:**
     ```bash
-    firebase init
-    ```
-    *   Select "Hosting: Configure files for Firebase Hosting and (optionally) set up GitHub Action deploys".
-    *   Select your existing Firebase project.
-    *   Set your public directory to `build`.
-    *   Configure as a single-page app (rewrite all urls to /index.html).
-
-2.  **Build the React App for Production:**
-    From the `frontend` directory, run the following command, replacing the URL with your deployed Cloud Run service URL:
-    ```bash
-    REACT_APP_BACKEND_URL=https://your-cloud-run-service-url.run.app npm run build
+    cd frontend
+    gcloud builds submit --config cloudbuild.yaml
     ```
 
-3.  **Deploy to Firebase:**
-    From the `frontend` directory, run:
-    ```bash
-    firebase deploy --only hosting
-    ```
+### Testing Deployment Setup
+
+Validate your deployment configuration:
+
+```bash
+./scripts/test-deployment.sh YOUR_PROJECT_ID your-github-username/repository-name
+```
+
+This script checks:
+- GCP project access and API enablement
+- Service accounts and IAM permissions
+- Workload Identity Federation setup
+- Secret Manager configuration
+- Resource creation (Artifact Registry, GCS, BigQuery)
+- GitHub Actions workflow validation

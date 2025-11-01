@@ -1,0 +1,241 @@
+name: Security Scan
+
+on:
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+jobs:
+  dependency-scan:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python (for backend)
+      if: matrix.component == 'backend'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Set up Node.js (for frontend)
+      if: matrix.component == 'frontend'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: './frontend/package-lock.json'
+
+    - name: Install dependencies (backend)
+      if: matrix.component == 'backend'
+      working-directory: ./backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install safety bandit
+
+    - name: Install dependencies (frontend)
+      if: matrix.component == 'frontend'
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Run safety check (backend)
+      if: matrix.component == 'backend'
+      working-directory: ./backend
+      run: |
+        safety check --json --output safety-report.json || true
+        safety check --short-report
+
+    - name: Run bandit security scan (backend)
+      if: matrix.component == 'backend'
+      working-directory: ./backend
+      run: |
+        bandit -r . -f json -o bandit-report.json || true
+        bandit -r . -f txt
+
+    - name: Run npm audit (frontend)
+      if: matrix.component == 'frontend'
+      working-directory: ./frontend
+      run: |
+        npm audit --json > npm-audit-report.json || true
+        npm audit
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports-${{ matrix.component }}
+        path: |
+          ${{ matrix.component }}/*-report.json
+        retention-days: 30
+
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker image
+      working-directory: ./backend
+      run: |
+        docker build -t security-scan-image .
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'security-scan-image'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for all branches
+
+    - name: Run GitLeaks
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  infrastructure-scan:
+    name: Infrastructure Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Run Cloud Security Command Center scan
+      run: |
+        # Check for public Cloud Run services
+        gcloud run services list --region=asia-south1 --format="table(metadata.name,status.url,spec.template.metadata.annotations['run.googleapis.com/ingress'])"
+        
+        # Check for public GCS buckets
+        gsutil iam get gs://$PROJECT_ID-knowledge-base
+        
+        # Check Secret Manager permissions
+        gcloud secrets list --format="table(name,replication.automatic)"
+
+    - name: Scan Terraform/Infrastructure files
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: .
+        framework: dockerfile,github_actions
+        output_format: sarif
+        output_file_path: checkov-results.sarif
+
+    - name: Upload Checkov scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: checkov-results.sarif
+
+  compliance-check:
+    name: Compliance Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for required security files
+      run: |
+        echo "Checking for required security files..."
+        
+        # Check for .gitignore
+        if [[ -f ".gitignore" ]]; then
+          echo "✓ .gitignore exists"
+          # Check if it excludes sensitive files
+          if grep -q "\.env" .gitignore && grep -q "\.key" .gitignore; then
+            echo "✓ .gitignore excludes sensitive files"
+          else
+            echo "⚠ .gitignore may not exclude all sensitive files"
+          fi
+        else
+          echo "✗ .gitignore missing"
+          exit 1
+        fi
+        
+        # Check for security documentation
+        if [[ -f "docs/DEPLOYMENT.md" ]]; then
+          echo "✓ Deployment documentation exists"
+        else
+          echo "⚠ Deployment documentation missing"
+        fi
+        
+        # Check for proper Dockerfile security
+        if [[ -f "backend/Dockerfile" ]]; then
+          if grep -q "USER" backend/Dockerfile; then
+            echo "✓ Dockerfile uses non-root user"
+          else
+            echo "⚠ Dockerfile may run as root"
+          fi
+        fi
+
+    - name: Check environment variable usage
+      run: |
+        echo "Checking for hardcoded secrets..."
+        
+        # Look for potential hardcoded secrets (excluding test files)
+        if grep -r -i --exclude-dir=node_modules --exclude-dir=.git --exclude="*.md" \
+          -E "(password|secret|key|token).*=.*['\"][^'\"]{8,}['\"]" . || true; then
+          echo "⚠ Potential hardcoded secrets found (review above)"
+        else
+          echo "✓ No obvious hardcoded secrets found"
+        fi
+
+  notification:
+    name: Security Notification
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, container-scan, secret-scan, infrastructure-scan, compliance-check]
+    if: always() && (failure() || cancelled())
+    
+    steps:
+    - name: Notify on security issues
+      run: |
+        echo "Security scan completed with issues. Please review the results."
+        echo "Check the Security tab in GitHub for detailed findings."

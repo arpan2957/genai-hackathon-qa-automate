@@ -45,7 +45,11 @@ def mock_polarion():
         yield mock_polarion_instance
 
 def test_get_integration():
-    with patch('integrations.azure_devops.AZURE_DEVOPS_URL', 'https://dev.azure.com/test'), \
+    with patch('integrations.jira.JIRA_URL', 'https://test.atlassian.net'), \
+         patch('integrations.jira.JIRA_USERNAME', 'test@example.com'), \
+         patch('integrations.jira.JIRA_API_TOKEN', 'test_token'), \
+         patch('integrations.jira.Jira') as mock_jira_class, \
+         patch('integrations.azure_devops.AZURE_DEVOPS_URL', 'https://dev.azure.com/test'), \
          patch('integrations.azure_devops.AZURE_DEVOPS_PROJECT', 'TestProject'), \
          patch('integrations.azure_devops.AZURE_DEVOPS_PAT', 'test_pat'), \
          patch('integrations.azure_devops.Connection') as mock_ado_connection, \
@@ -54,6 +58,10 @@ def test_get_integration():
          patch('integrations.polarion.POLARION_PASSWORD', 'test_pass'), \
          patch('integrations.polarion.POLARION_PROJECT_ID', 'TestProject'), \
          patch('integrations.polarion.PolarionClient') as mock_polarion_client:
+        
+        # Mock Jira
+        mock_jira_instance = MagicMock()
+        mock_jira_class.return_value = mock_jira_instance
         
         # Mock Azure DevOps Connection
         mock_connection_instance = MagicMock()

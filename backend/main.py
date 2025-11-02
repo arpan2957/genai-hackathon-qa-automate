@@ -50,3 +50,9 @@ app.include_router(admin.router)
 app.include_router(knowledge_base.router)
 app.include_router(agent.router)
 app.include_router(user_settings.router)
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for load balancers and monitoring."""
+    return {"status": "healthy", "service": "ai-test-case-generator-backend"}

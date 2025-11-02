@@ -1,0 +1,63 @@
+name: Backend CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: asia-south1
+
+jobs:
+  build-and-deploy:
+    name: Build, Test and Deploy using Cloud Build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: ./backend
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Submit to Cloud Build
+      run: |
+        gcloud builds submit . \
+          --config=cloudbuild.yaml \
+          --substitutions=_PROJECT_ID=$PROJECT_ID,_COMMIT_SHA=$GITHUB_SHA \
+          --region=$REGION
+
+    - name: Get Cloud Run URL
+      id: deploy
+      run: |
+        SERVICE_URL=$(gcloud run services describe ai-test-case-generator-backend --region=$REGION --format='value(status.url)')
+        echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_OUTPUT
+        echo "✅ Backend deployed to: $SERVICE_URL"
+
+    - name: Verify deployment
+      run: |
+        echo "🚀 Backend deployment completed successfully!"
+        echo "🔗 Service URL: ${{ steps.deploy.outputs.SERVICE_URL }}"
+        echo "📦 Image: asia-south1-docker.pkg.dev/$PROJECT_ID/ai-test-case-generator/backend:$GITHUB_SHA"

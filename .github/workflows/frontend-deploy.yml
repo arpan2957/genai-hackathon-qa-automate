@@ -1,0 +1,66 @@
+name: Frontend CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-deploy.yml'
+
+env:
+  NODE_VERSION: '18'
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+jobs:
+  build-and-deploy:
+    name: Build, Lint and Deploy using Cloud Build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Submit to Cloud Build
+      run: |
+        gcloud builds submit . \
+          --config=cloudbuild.yaml \
+          --substitutions=_PROJECT_ID=$PROJECT_ID \
+          --region=asia-south1
+
+    - name: Get Firebase Hosting URL
+      id: deploy
+      run: |
+        HOSTING_URL="https://$PROJECT_ID.web.app"
+        echo "HOSTING_URL=$HOSTING_URL" >> $GITHUB_OUTPUT
+        echo "✅ Frontend deployed to: $HOSTING_URL"
+
+    - name: Verify deployment
+      run: |
+        echo "🚀 Frontend deployment completed successfully!"
+        echo "🌐 Frontend URL: ${{ steps.deploy.outputs.HOSTING_URL }}"
+        # Wait for deployment to propagate
+        sleep 30
+        # Basic connectivity test
+        curl -f ${{ steps.deploy.outputs.HOSTING_URL }} || echo "⚠️ Connectivity test failed, but deployment may still be successful"

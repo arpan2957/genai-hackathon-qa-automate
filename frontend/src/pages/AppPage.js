@@ -19,8 +19,9 @@ import AdminPage from './AdminPage';
 import AdminReportingPage from './AdminReportingPage';
 import FineTuningPage from './FineTuningPage';
 import SettingsPage from './SettingsPage';
+import { config } from '../config';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
+const BACKEND_URL = config.BACKEND_URL;
 
 // GEMINI_TEST_COMMENT
 const AppPage = () => {

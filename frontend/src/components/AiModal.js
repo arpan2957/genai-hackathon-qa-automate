@@ -4,8 +4,9 @@ import TestCaseTable from './TestCaseTable';
 import SkeletonLoader from '../SkeletonLoader';
 import { auth } from '../firebase';
 import toast from 'react-hot-toast';
+import { config } from '../config';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
+const BACKEND_URL = config.BACKEND_URL;
 
 const AiModal = ({ isOpen, onClose, onFinalize, getAuthToken }) => {
     const [isLoading, setIsLoading] = useState(false);

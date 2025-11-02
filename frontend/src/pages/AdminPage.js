@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { auth } from '../firebase';
 import toast from 'react-hot-toast';
 import { DeleteIcon, ChartBarIcon } from '../components/icons';
+import { config } from '../config';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
+const BACKEND_URL = config.BACKEND_URL;
 
 const AdminPage = ({ setCurrentPage, setPrefilledFilters }) => {
     const [users, setUsers] = useState([]);

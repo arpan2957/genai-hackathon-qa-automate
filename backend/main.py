@@ -26,7 +26,8 @@ app = FastAPI(
     
 # CORS Middleware
 origins = [
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "https://ai-demonstration-387308.web.app"
 ]
 
 app.add_middleware(

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
 import { auth } from '../firebase';
+import { config } from '../config';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
+const BACKEND_URL = config.BACKEND_URL;
 
 const CreateTestCaseModal = ({ isOpen, onClose, onSave }) => {
     const [title, setTitle] = useState('');

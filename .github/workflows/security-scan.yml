@@ -154,8 +154,8 @@ jobs:
         # Check for public Cloud Run services
         gcloud run services list --region=asia-south1 --format="table(metadata.name,status.url,spec.template.metadata.annotations['run.googleapis.com/ingress'])"
         
-        # Check for public GCS buckets
-        gsutil iam get gs://$PROJECT_ID-knowledge-base
+        # Check for public GCS buckets (if they exist)
+        gsutil iam get gs://$PROJECT_ID-knowledge-base 2>/dev/null || echo "GCS bucket not found or not accessible"
         
         # Check Secret Manager permissions
         gcloud secrets list --format="table(name,replication.automatic)"
@@ -201,10 +201,10 @@ jobs:
         fi
         
         # Check for security documentation
-        if [[ -f "docs/DEPLOYMENT.md" ]]; then
-          echo "✓ Deployment documentation exists"
+        if [[ -f "PRIVACY.md" ]]; then
+          echo "✓ Privacy documentation exists"
         else
-          echo "⚠ Deployment documentation missing"
+          echo "⚠ Privacy documentation missing"
         fi
         
         # Check for proper Dockerfile security

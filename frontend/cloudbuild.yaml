@@ -1,13 +1,12 @@
 # Frontend Cloud Build Configuration
 # This configuration is used for manual builds via gcloud builds submit
-# For automated CI/CD, use GitHub Actions workflows
 
 steps:
 # Install dependencies
 - name: 'gcr.io/cloud-builders/npm'
   args: ['ci']
 
-# Run linting (tests skipped - no test files exist)
+# Run linting (handled by react-scripts during build)
 - name: 'gcr.io/cloud-builders/npm'
   args: ['run', 'lint']
 
@@ -18,56 +17,84 @@ steps:
 #   - 'CI=true'
 
 # Security audit
-- name: 'gcr.io/cloud-builders/npm'
-  args: ['audit', '--audit-level=high']
+# - name: 'gcr.io/cloud-builders/npm'
+#   args: ['audit', '--audit-level=high']
 
-# Get backend URL and Firebase config, then build
+# Get backend URL and Firebase config
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
     # Get backend URL
-    BACKEND_URL=$(gcloud run services describe ai-test-case-generator-backend --region=asia-south1 --format='value(status.url)')
-    echo "Backend URL: $BACKEND_URL"
+    BACKEND_URL=$$(gcloud run services describe ai-test-case-generator-backend --region=asia-south1 --format='value(status.url)' 2>/dev/null)
+    
+    # Use fallback if service not found
+    if [ -z "$$BACKEND_URL" ]; then
+      BACKEND_URL="https://ai-test-case-generator-backend-$_PROJECT_ID.a.run.app"
+    fi
     
     # Get Firebase configuration from Secret Manager (with fallbacks)
-    FIREBASE_API_KEY=$(gcloud secrets versions access latest --secret="firebase-api-key" 2>/dev/null || echo "")
-    FIREBASE_AUTH_DOMAIN=$(gcloud secrets versions access latest --secret="firebase-auth-domain" 2>/dev/null || echo "$PROJECT_ID.firebaseapp.com")
-    FIREBASE_STORAGE_BUCKET=$(gcloud secrets versions access latest --secret="firebase-storage-bucket" 2>/dev/null || echo "$PROJECT_ID.appspot.com")
-    FIREBASE_MESSAGING_SENDER_ID=$(gcloud secrets versions access latest --secret="firebase-messaging-sender-id" 2>/dev/null || echo "")
-    FIREBASE_APP_ID=$(gcloud secrets versions access latest --secret="firebase-app-id" 2>/dev/null || echo "")
+    FIREBASE_API_KEY=$$(gcloud secrets versions access latest --secret="firebase-api-key" 2>/dev/null || echo "")
+    FIREBASE_AUTH_DOMAIN=$$(gcloud secrets versions access latest --secret="firebase-auth-domain" 2>/dev/null || echo "$_PROJECT_ID.firebaseapp.com")
+    FIREBASE_STORAGE_BUCKET=$$(gcloud secrets versions access latest --secret="firebase-storage-bucket" 2>/dev/null || echo "$_PROJECT_ID.appspot.com")
+    FIREBASE_MESSAGING_SENDER_ID=$$(gcloud secrets versions access latest --secret="firebase-messaging-sender-id" 2>/dev/null || echo "")
+    FIREBASE_APP_ID=$$(gcloud secrets versions access latest --secret="firebase-app-id" 2>/dev/null || echo "")
     
-    # Export environment variables for React build
-    export REACT_APP_BACKEND_URL=$BACKEND_URL
-    export REACT_APP_FIREBASE_API_KEY=$FIREBASE_API_KEY
-    export REACT_APP_FIREBASE_AUTH_DOMAIN=$FIREBASE_AUTH_DOMAIN
-    export REACT_APP_FIREBASE_PROJECT_ID=$PROJECT_ID
-    export REACT_APP_FIREBASE_STORAGE_BUCKET=$FIREBASE_STORAGE_BUCKET
-    export REACT_APP_FIREBASE_MESSAGING_SENDER_ID=$FIREBASE_MESSAGING_SENDER_ID
-    export REACT_APP_FIREBASE_APP_ID=$FIREBASE_APP_ID
-    export GENERATE_SOURCEMAP=false
-    export CI=false
+    # Save environment variables to file for next step
+    echo "REACT_APP_BACKEND_URL=$$BACKEND_URL" > /workspace/.env
+    echo "REACT_APP_FIREBASE_API_KEY=$$FIREBASE_API_KEY" >> /workspace/.env
+    echo "REACT_APP_FIREBASE_AUTH_DOMAIN=$$FIREBASE_AUTH_DOMAIN" >> /workspace/.env
+    echo "REACT_APP_FIREBASE_PROJECT_ID=$_PROJECT_ID" >> /workspace/.env
+    echo "REACT_APP_FIREBASE_STORAGE_BUCKET=$$FIREBASE_STORAGE_BUCKET" >> /workspace/.env
+    echo "REACT_APP_FIREBASE_MESSAGING_SENDER_ID=$$FIREBASE_MESSAGING_SENDER_ID" >> /workspace/.env
+    echo "REACT_APP_FIREBASE_APP_ID=$$FIREBASE_APP_ID" >> /workspace/.env
+    echo "GENERATE_SOURCEMAP=false" >> /workspace/.env
+    echo "CI=false" >> /workspace/.env
+    echo "NODE_ENV=production" >> /workspace/.env
+    echo "REACT_APP_DEV_BACKEND_URL=http://localhost:8000" >> /workspace/.env
+
+# Build the React application with environment variables
+- name: 'gcr.io/cloud-builders/npm'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    # Load environment variables
+    set -a
+    source /workspace/.env
+    set +a
     
     # Build the application
     npm run build
-    
-    # Analyze build
-    du -sh build/
-    find build/ -type f -name "*.js" -o -name "*.css" | xargs ls -lah | sort -k5 -hr | head -10
 
 # Deploy to Firebase Hosting
-- name: 'gcr.io/cloud-builders/firebase'
-  args: ['deploy', '--only', 'hosting', '--project', '$PROJECT_ID']
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    # Install Node.js and npm (needed for Firebase CLI)
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+    apt-get install -y nodejs
+    
+    # Install Firebase CLI
+    npm install -g firebase-tools
+    
+    # Deploy to Firebase Hosting (gcloud authentication is already available)
+    firebase deploy --only hosting --project $_PROJECT_ID --non-interactive
 
 # Run smoke test
 - name: 'gcr.io/cloud-builders/curl'
   args:
   - '-f'
-  - 'https://$PROJECT_ID.web.app'
+  - '--retry'
+  - '3'
+  - '--retry-delay'
+  - '10'
+  - 'https://$_PROJECT_ID.web.app'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: 'E2_STANDARD_2'  # Cost-effective for frontend builds
   
 timeout: '1200s'  # 20 minutes

@@ -5,17 +5,11 @@ import toast from 'react-hot-toast';
 import { 
     UserIcon, 
     CogIcon, 
-    BellIcon, 
-    ShieldCheckIcon, 
-    DocumentTextIcon,
-    KeyIcon,
-    GlobeAltIcon,
-    ExclamationTriangleIcon,
-    CheckCircleIcon,
-    XMarkIcon
+    GlobeAltIcon
 } from '../components/icons';
+import { config } from '../config';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
+const BACKEND_URL = config.BACKEND_URL;
 
 const SettingsPage = () => {
     const { theme, toggleTheme } = useTheme();

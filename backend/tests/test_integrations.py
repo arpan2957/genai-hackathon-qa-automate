@@ -3,8 +3,15 @@ from unittest.mock import MagicMock, patch
 
 from integrations import get_integration
 from integrations.jira import JiraIntegration
-from integrations.azure_devops import AzureDevOpsIntegration
 from integrations.polarion import PolarionIntegration
+
+# Import Azure DevOps conditionally for tests
+try:
+    from integrations.azure_devops import AzureDevOpsIntegration
+    AZURE_DEVOPS_AVAILABLE = True
+except ImportError:
+    AZURE_DEVOPS_AVAILABLE = False
+    AzureDevOpsIntegration = None
 
 @pytest.fixture(autouse=True)
 def mock_env_vars(monkeypatch):
@@ -74,7 +81,11 @@ def test_get_integration():
         mock_polarion_client.return_value = mock_polarion_instance
         
         assert isinstance(get_integration('jira'), JiraIntegration)
-        assert isinstance(get_integration('azure_devops'), AzureDevOpsIntegration)
+        if AZURE_DEVOPS_AVAILABLE:
+            assert isinstance(get_integration('azure_devops'), AzureDevOpsIntegration)
+        else:
+            with pytest.raises(ValueError, match="Azure DevOps integration is not available"):
+                get_integration('azure_devops')
         assert isinstance(get_integration('polarion'), PolarionIntegration)
         with pytest.raises(ValueError):
             get_integration('unknown')
@@ -90,6 +101,7 @@ def test_jira_create_issue(mock_jira):
     result = jira_integration.create_issue(issue_data)
     assert result['issue_key'] == 'PROJ-123'
 
+@pytest.mark.skipif(not AZURE_DEVOPS_AVAILABLE, reason="Azure DevOps integration not available")
 def test_azure_devops_create_issue(mock_azure_devops):
     with patch('integrations.azure_devops.AZURE_DEVOPS_URL', 'https://dev.azure.com/test'), \
          patch('integrations.azure_devops.AZURE_DEVOPS_PROJECT', 'TestProject'), \

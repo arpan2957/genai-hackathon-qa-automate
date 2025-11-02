@@ -5,7 +5,8 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    AZURE_DEVOPS_CACHE_DIR=/app/.azure-devops-cache
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -30,7 +31,7 @@ COPY . .
 RUN rm -f .env
 
 # Create necessary directories and set permissions
-RUN mkdir -p /app/logs && \
+RUN mkdir -p /app/logs /app/.azure-devops-cache && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
